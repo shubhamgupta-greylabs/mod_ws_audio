@@ -1,6 +1,9 @@
 #ifndef WEBSOCKET_HANDLER_H
 #define WEBSOCKET_HANDLER_H
 
+
+static std::unique_ptr<WebSocketAudioModule> g_module;
+
 /**
  * WebSocket Audio Module - main module class
  */
@@ -55,7 +58,13 @@ public:
     void handle_websocket_disconnection(struct lws* wsi);
     
     // Static access for C callbacks
-    static WebSocketAudioModule* instance() { return g_module.get(); }
+    static WebSocketAudioModule* instance() { 
+        if (!g_module) {
+            g_module = std::unique_ptr<WebSocketAudioModule>(new WebSocketAudioModule());
+        }
+
+        return g_module.get(); 
+    }
 };
 
 #endif // WEBSOCKET_HANDLER_H

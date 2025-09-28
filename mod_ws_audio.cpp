@@ -35,9 +35,6 @@ extern "C" {
 class WebSocketAudioModule;
 class AudioSession;
 
-// Global module instance
-static std::unique_ptr<WebSocketAudioModule> g_module;
-
 /**
  * FreeSWITCH API Functions
  */
@@ -103,10 +100,10 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_ws_audio_load) {
     switch_api_interface_t* api_interface;
     
     // Create global module instance
-    g_module = std::make_unique<WebSocketAudioModule>();
+    auto* module = WebSocketAudioModule::instance();
     
     // Initialize module
-    if (!g_module->initialize(module_interface, pool)) {
+    if (!module->initialize(module_interface, pool)) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, 
                          "Failed to initialize WebSocket Audio Module\n");
         return SWITCH_STATUS_GENERR;
@@ -128,9 +125,11 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_ws_audio_load) {
 }
 
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_ws_audio_shutdown) {
-    if (g_module) {
-        g_module->shutdown();
-        g_module.reset();
+    auto* module = WebSocketAudioModule::instance();
+
+    if (module) {
+        module->shutdown();
+        module.reset();
     }
     
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
