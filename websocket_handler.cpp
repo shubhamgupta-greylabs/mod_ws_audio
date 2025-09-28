@@ -1,5 +1,10 @@
+#include <mutex>
+#include <vector>
+#include <string>
+#include <thread>
 #include <switch.h>
-
+#include "audio_session_handler.h"
+#include "websocket_handler.h"
 
 /**
  * WebSocketAudioModule Implementation

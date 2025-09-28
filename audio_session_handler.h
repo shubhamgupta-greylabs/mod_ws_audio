@@ -1,7 +1,11 @@
 #ifndef AUDIO_SESSION_HANDLER_H
 #define AUDIO_SESSION_HANDLER_H
 
-#include "audio_session_handler.h"
+#include <string>
+#include <vector>
+#include <atomic>
+#include <mutex>
+#include <switch.h>
 
 class AudioSession {
 private:

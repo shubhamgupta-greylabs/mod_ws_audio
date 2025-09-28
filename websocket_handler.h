@@ -1,8 +1,11 @@
 #ifndef WEBSOCKET_HANDLER_H
 #define WEBSOCKET_HANDLER_H
 
-
-static std::unique_ptr<WebSocketAudioModule> g_module;
+#include <string>
+#include <unordered_map>
+#include <thread>
+#include <atomic>
+#include "audio_session_handler.h"
 
 /**
  * WebSocket Audio Module - main module class
@@ -30,6 +33,9 @@ private:
     
     // Server thread
     void websocket_server_thread();
+    
+    // Websocket Instance
+    static std::unique_ptr<WebSocketAudioModule> g_module;
     
 public:
     WebSocketAudioModule();

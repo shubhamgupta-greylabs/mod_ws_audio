@@ -129,7 +129,6 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_ws_audio_shutdown) {
 
     if (module) {
         module->shutdown();
-        module.reset();
     }
     
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
