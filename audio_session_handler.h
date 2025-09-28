@@ -1,6 +1,8 @@
 #ifndef AUDIO_SESSION_HANDLER_H
 #define AUDIO_SESSION_HANDLER_H
 
+#include "audio_session_handler.h"
+
 class AudioSession {
 private:
     std::string call_uuid_;

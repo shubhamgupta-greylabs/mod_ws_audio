@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <switch.h>
+#include "audio_session_handler.h"
 
 /**
  * AudioSession Implementation
