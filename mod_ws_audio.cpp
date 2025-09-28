@@ -22,6 +22,8 @@
 #include <atomic>
 #include <vector>
 #include <cjson/cJSON.h>
+#include "websocket_handler.h"
+#include "audio_session_handler.h"
 
 extern "C" {
     SWITCH_MODULE_LOAD_FUNCTION(mod_ws_audio_load);
