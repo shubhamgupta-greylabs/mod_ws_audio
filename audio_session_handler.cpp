@@ -167,8 +167,13 @@ void AudioSession::queue_audio(const uint8_t* data, size_t len) {
     audio_queue.emplace(data, data + len);
 
     // Ask libwebsockets to call the writeable callback
-    if (wsi) {
-        lws_callback_on_writable(wsi);
+    if (websocket_) {
+        lws_callback_on_writable(websocket_);
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
+                         "Queued audio data for UUID: %s, size: %zu bytes\n", call_uuid_.c_str(), len);
+    } else {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, 
+                         "WebSocket not connected for UUID: %s\n", call_uuid_.c_str());
     }
 }
 
@@ -187,10 +192,18 @@ switch_bool_t AudioSession::read_audio_callback(switch_media_bug_t* bug, void* u
     switch (type) {
     case SWITCH_ABC_TYPE_READ:
         {
-            switch_frame_t* frame = switch_core_media_bug_get_read_replace_frame(bug);
-            if (frame && frame->data && frame->datalen > 0) {
-                // Send audio data to WebSocket client
-                session->queue_audio(frame->data, frame->datalen);
+            uint8_t data_buf[SWITCH_RECOMMENDED_BUFFER_SIZE];
+            switch_frame_t frame = {0};
+            frame.data = data_buf;
+            frame.buflen = SWITCH_RECOMMENDED_BUFFER_SIZE;
+
+            if (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS) {
+                if (frame && frame->data && frame->datalen > 0) {
+                    // Send audio data to WebSocket client
+                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
+                             "Read audio frame: datalen=%d\n", frame ? frame->datalen : -1);
+                    session->send_audio_data(static_cast<const uint8_t*>(frame->data), frame->datalen);
+                }
             }
         }
         break;

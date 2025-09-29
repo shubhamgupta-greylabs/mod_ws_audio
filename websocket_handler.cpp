@@ -121,7 +121,7 @@ void WebSocketAudioModule::websocket_client_thread() {
         return;
     }
 
-    string& hostName = strip_ws_scheme(ws_host_);
+    std::string hostName = strip_ws_scheme(ws_host_);
     
     struct lws_client_connect_info ccinfo = {};
     ccinfo.context = ws_context_;
@@ -145,7 +145,7 @@ void WebSocketAudioModule::websocket_client_thread() {
                      ws_host_.c_str(), ws_port_);
 
     while (ws_running_) {
-        lws_service(ws_context_, 50);
+        lws_service(ws_context_, 20);
     }
     
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
@@ -247,7 +247,7 @@ void WebSocketAudioModule::handle_websocket_message(struct lws* wsi, const std::
             bool success = audio_session->start_streaming();
             
             std::string response = success ? 
-                R"({"status":"ok","message":"Audio streaming started"})" :
+                "{\"status\":\"ok\",\"message\":\"Audio streaming started\",\"uuid\":\"" + uuid + "\"}":
                 R"({"status":"error","message":"Failed to start streaming"})";
             audio_session->send_json_message(response);
             
@@ -274,7 +274,7 @@ void WebSocketAudioModule::handle_websocket_message(struct lws* wsi, const std::
                     bool success = session->play_audio(audio_vec);
                     
                     std::string response = success ?
-                        R"({"status":"ok","message":"Audio playback started"})" :
+                        "{\"status\":\"ok\",\"message\":\"Audio playback started\",\"uuid\":\"" + uuid + "\"}":
                         R"({"status":"error","message":"Failed to start playback"})";
                     session->send_json_message(response);
                     
@@ -319,13 +319,10 @@ int WebSocketAudioModule::websocket_callback(struct lws* wsi, enum lws_callback_
                                             void* user, void* in, size_t len) {
     
     auto* module = WebSocketAudioModule::instance();
-    auto* session = static_cast<AudioSession*>(user);
+    auto* session = module->get_session_by_websocket(wsi);
 
     if (!module) return -1;
     
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
-                     "WebSocket callback reason: %d\n", reason);
-
     switch (reason) {
     case LWS_CALLBACK_ESTABLISHED:
         module->handle_websocket_connection(wsi);

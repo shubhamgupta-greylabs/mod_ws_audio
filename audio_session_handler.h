@@ -5,6 +5,7 @@
 #include <vector>
 #include <atomic>
 #include <mutex>
+#include <queue>
 #include <switch.h>
 
 class AudioSession {
@@ -29,9 +30,6 @@ private:
     // Media bug callbacks
     static switch_bool_t read_audio_callback(switch_media_bug_t* bug, void* user_data, switch_abc_type_t type);
     static switch_bool_t write_audio_callback(switch_media_bug_t* bug, void* user_data, switch_abc_type_t type);
-
-    void queue_audio(const uint8_t* data, size_t len);
-    bool pop_audio_chunk(std::vector<uint8_t>& chunk);
     
 public:
     AudioSession(const std::string& uuid, switch_core_session_t* session, struct lws* ws);
@@ -51,6 +49,8 @@ public:
     // WebSocket communication
     bool send_json_message(const std::string& message);
     bool send_audio_data(const void* data, size_t len);
+    void queue_audio(const uint8_t* data, size_t len);
+    bool pop_audio_chunk(std::vector<uint8_t>& chunk);
     
 private:
     void cleanup_media_bugs();

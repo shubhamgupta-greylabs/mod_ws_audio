@@ -63,7 +63,7 @@ SWITCH_STANDARD_API(ws_audio_start_api) {
     }
 
     std::string host = argv[0];
-    int port = stoi(argv[1]);
+    int port = std::stoi(argv[1]);
 
     if (port <= 0 || port > 65535) {
         stream->write_function(stream, "Invalid port number: %s\n", cmd);
