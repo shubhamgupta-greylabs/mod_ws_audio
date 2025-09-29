@@ -319,7 +319,7 @@ int WebSocketAudioModule::websocket_callback(struct lws* wsi, enum lws_callback_
                                             void* user, void* in, size_t len) {
     
     auto* module = WebSocketAudioModule::instance();
-    auto* session = module->get_session_by_websocket(wsi);
+    auto* session = module->get_session_by_websocket(wsi).get();
 
     if (!module) return -1;
     

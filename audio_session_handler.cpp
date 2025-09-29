@@ -198,11 +198,11 @@ switch_bool_t AudioSession::read_audio_callback(switch_media_bug_t* bug, void* u
             frame.buflen = SWITCH_RECOMMENDED_BUFFER_SIZE;
 
             if (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS) {
-                if (frame && frame->data && frame->datalen > 0) {
+                if (frame && frame.data && frame.datalen > 0) {
                     // Send audio data to WebSocket client
                     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
-                             "Read audio frame: datalen=%d\n", frame ? frame->datalen : -1);
-                    session->send_audio_data(static_cast<const uint8_t*>(frame->data), frame->datalen);
+                             "Read audio frame: datalen=%d\n", frame ? frame.datalen : -1);
+                    session->send_audio_data(static_cast<const uint8_t*>(frame.data), frame.datalen);
                 }
             }
         }
