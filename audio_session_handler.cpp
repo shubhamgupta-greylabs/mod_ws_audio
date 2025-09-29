@@ -5,6 +5,7 @@
 #include <vector>
 #include <switch.h>
 #include "audio_session_handler.h"
+#include <libwebsockets.h>
 
 /**
  * AudioSession Implementation
@@ -183,34 +184,33 @@ switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* 
     auto* session = static_cast<AudioSession*>(user_data);
     
     switch (type) {
-    case SWITCH_ABC_TYPE_WRITE:
-        {
-            if (session->is_playing()) {
-                switch_frame_t* frame = switch_core_media_bug_get_write_replace_frame(bug);
-                if (frame && frame->data) {
-                    std::lock_guard<std::mutex> lock(session->audio_mutex_);
-                    
-                    size_t remaining = session->audio_buffer_.size() - session->audio_buffer_pos_;
-                    size_t to_copy = std::min(remaining, frame->datalen);
-                    
-                    if (to_copy > 0) {
-                        memcpy(frame->data, session->audio_buffer_.data() + session->audio_buffer_pos_, to_copy);
-                        session->audio_buffer_pos_ += to_copy;
-                        frame->datalen = to_copy;
+        case SWITCH_ABC_TYPE_WRITE: {
+                if (session->is_playing()) {
+                    switch_frame_t* frame = switch_core_media_bug_get_write_replace_frame(bug);
+                    if (frame && frame->data) {
+                        std::lock_guard<std::mutex> lock(session->audio_mutex_);
                         
-                        // Check if finished playing
-                        if (session->audio_buffer_pos_ >= session->audio_buffer_.size()) {
-                            session->audio_playing_ = false;
-                            session->notify_audio_finished(false);
-                            session->cleanup_audio_buffer();
+                        uint32_t remaining = session->audio_buffer_.size() - session->audio_buffer_pos_;
+                        uint32_t to_copy = std::min(remaining, frame->datalen);
+                        
+                        if (to_copy > 0) {
+                            memcpy(frame->data, session->audio_buffer_.data() + session->audio_buffer_pos_, to_copy);
+                            session->audio_buffer_pos_ += to_copy;
+                            frame->datalen = to_copy;
+                            
+                            // Check if finished playing
+                            if (session->audio_buffer_pos_ >= session->audio_buffer_.size()) {
+                                session->audio_playing_ = false;
+                                session->notify_audio_finished(false);
+                                session->cleanup_audio_buffer();
+                            }
+                        } else {
+                            // No more audio, send silence
+                            memset(frame->data, 0, frame->datalen);
                         }
-                    } else {
-                        // No more audio, send silence
-                        memset(frame->data, 0, frame->datalen);
                     }
                 }
             }
-        }
         break;
     default:
         break;

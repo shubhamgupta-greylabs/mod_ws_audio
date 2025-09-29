@@ -17,6 +17,9 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 find_package(PkgConfig REQUIRED)
 
+# find libwebsockets
+pkg_check_modules(LIBWEBSOCKETS REQUIRED libwebsockets)
+
 pkg_check_modules(FreeSWITCH REQUIRED IMPORTED_TARGET freeswitch)
 pkg_get_variable(FS_MOD_DIR freeswitch modulesdir)
 message(STATUS "FreeSWITCH modules dir: ${FS_MOD_DIR}")
@@ -34,45 +37,25 @@ target_link_libraries(mod_ws_audio PRIVATE
     pthread
 )
 
+target_link_libraries(mod_ws_audio PRIVATE 
+    PkgConfig::FreeSWITCH 
+    pthread
+    ${LIBWEBSOCKETS_LIBRARIES}
+)
+target_include_directories(mod_ws_audio PRIVATE
+    ${LIBWEBSOCKETS_INCLUDE_DIRS}
+)
+
 if(CMAKE_BUILD_TYPE MATCHES "Release")
     set_target_properties(${PROJECT_NAME} 
         PROPERTIES 
         LINK_FLAGS_RELEASE "-s")
 endif()
 
-set(CPACK_COMPONENTS_ALL ${PROJECT_NAME} changelog.gz copyright)
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "libc6, openssl, zlib1g, libfreeswitch1")
-set(CPACK_PACKAGE_NAME "mod-ws-audio")
-set(CMAKE_INSTALL_DOCDIR "share/doc/${CPACK_PACKAGE_NAME}")
-
-add_custom_command(
-    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/debian/changelog"
-    COMMAND gzip -cn9 "${CMAKE_CURRENT_SOURCE_DIR}/debian/changelog" > "${CMAKE_CURRENT_BINARY_DIR}/changelog.gz"
-    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/changelog.gz"
-    COMMENT "Processing copyright file"
-)
-add_custom_target(changelog_target ALL DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/changelog.gz")
-
-add_custom_command(
-    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/debian/copyright"
-    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/debian/copyright" "${CMAKE_CURRENT_BINARY_DIR}/copyright"
-    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/copyright"
-    COMMENT "Generating compressed changelog.gz"
-)
-add_custom_target(copyright_target ALL DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/copyright")
-
-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/copyright"
-        DESTINATION "${CMAKE_INSTALL_DOCDIR}"
-        COMPONENT copyright
-)
 
 install(TARGETS ${PROJECT_NAME}
         COMPONENT ${PROJECT_NAME}
         DESTINATION ${FS_MOD_DIR})
 
-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/changelog.gz"
-	DESTINATION "${CMAKE_INSTALL_DOCDIR}"
-	COMPONENT changelog.gz
-)
-
+        
 message(STATUS "Components to pack: ${CPACK_COMPONENTS_ALL}")

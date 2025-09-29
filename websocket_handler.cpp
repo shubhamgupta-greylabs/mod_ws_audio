@@ -2,6 +2,7 @@
 #include <vector>
 #include <string>
 #include <thread>
+#include <libwebsockets.h>
 #include <switch.h>
 #include "audio_session_handler.h"
 #include "websocket_handler.h"
@@ -29,7 +30,7 @@ bool WebSocketAudioModule::initialize(switch_loadable_module_interface_t** modul
 }
 
 void WebSocketAudioModule::shutdown() {
-    stop_websocket_server();
+    disconnect_websocket_client();
     
     // Clear all sessions
     {
@@ -52,25 +53,26 @@ void WebSocketAudioModule::shutdown() {
                      "WebSocketAudioModule shutdown complete\n");
 }
 
-bool WebSocketAudioModule::start_websocket_server(int port) {
+bool WebSocketAudioModule::connect_to_websocket_server(std::string host, int port) {
     if (ws_running_) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, 
-                         "WebSocket server already running on port %d\n", ws_port_);
+                         "WebSocket clienat already running on host:port %s:%d\n", ws_host_, ws_port_);
         return false;
     }
     
+    ws_host_ = host;
     ws_port_ = port;
     ws_running_ = true;
     
     // Start server thread
-    ws_thread_ = std::thread(&WebSocketAudioModule::websocket_server_thread, this);
+    ws_thread_ = std::thread(&WebSocketAudioModule::websocket_client_thread, this);
     
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
-                     "WebSocket server starting on port %d\n", port);
+                     "WebSocket server starting on host:port %s:%d\n", host, port);
     return true;
 }
 
-bool WebSocketAudioModule::stop_websocket_server() {
+bool WebSocketAudioModule::disconnect_websocket_client() {
     if (!ws_running_) {
         return true;
     }
@@ -88,11 +90,13 @@ bool WebSocketAudioModule::stop_websocket_server() {
     }
     
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
-                     "WebSocket server stopped\n");
+                     "WebSocket client disconnected\n");
     return true;
 }
 
-void WebSocketAudioModule::websocket_server_thread() {
+void WebSocketAudioModule::websocket_client_thread() {
+    lws_set_log_level(LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE | LLL_INFO, nullptr);
+
     struct lws_protocols protocols[] = {
         {
             "ws-audio-protocol",
@@ -104,7 +108,7 @@ void WebSocketAudioModule::websocket_server_thread() {
     };
     
     struct lws_context_creation_info info = {};
-    info.port = ws_port_;
+    info.port = CONTEXT_PORT_NO_LISTEN;
     info.protocols = protocols;
     info.gid = -1;
     info.uid = -1;
@@ -120,6 +124,28 @@ void WebSocketAudioModule::websocket_server_thread() {
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
                      "WebSocket server started on port %d\n", ws_port_);
     
+                     // Connection info
+    struct lws_client_connect_info ccinfo = {};
+    ccinfo.context = ws_context_;
+    ccinfo.address = ws_host_.c_str();
+    ccinfo.port = port;
+    ccinfo.path = "/";
+    ccinfo.host = ws_host_.c_str();
+    ccinfo.origin = "freeswitch";
+    ccinfo.protocol = "ws-audio-protocol";
+
+    struct lws* wsi = lws_client_connect_via_info(&ccinfo);
+    if (!wsi) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+                         "Failed to initiate WebSocket client connection\n");
+        ws_running_ = false;
+        return;
+    }
+
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+                     "WebSocket client thread started, connecting to %s:%d\n",
+                     ws_host_.c_str(), ws_port_);
+
     while (ws_running_) {
         lws_service(ws_context_, 50);
     }
@@ -239,8 +265,11 @@ void WebSocketAudioModule::handle_websocket_message(struct lws* wsi, const std::
             auto session = get_session(uuid);
             if (session) {
                 // Decode base64 audio data
-                size_t decoded_len = 0;
-                char* decoded_audio = switch_b64_decode(audio_data->valuestring, &decoded_len);
+                switch_size_t approx_decoded_len =  strlen(audio_data->valuestring) / 4 * 3;
+
+                char* decoded_audio = (char*)malloc(approx_decoded_len); 
+
+                switch_size_t decoded_len = switch_b64_decode(audio_data->valuestring, decoded_audio, approx_decoded_len);
                 
                 if (decoded_audio && decoded_len > 0) {
                     std::vector<uint8_t> audio_vec(decoded_audio, decoded_audio + decoded_len);

@@ -5,6 +5,8 @@
 #include <unordered_map>
 #include <thread>
 #include <atomic>
+#include <memory>
+#include <libwebsockets.h>
 #include "audio_session_handler.h"
 
 /**
@@ -16,6 +18,7 @@ private:
     struct lws_context* ws_context_;
     std::thread ws_thread_;
     std::atomic<bool> ws_running_;
+    std::string ws_host_;
     int ws_port_;
     
     // Session management
@@ -32,10 +35,7 @@ private:
                                 void* user, void* in, size_t len);
     
     // Server thread
-    void websocket_server_thread();
-    
-    // Websocket Instance
-    static std::unique_ptr<WebSocketAudioModule> g_module;
+    void websocket_client_thread();
     
 public:
     WebSocketAudioModule();
@@ -46,8 +46,8 @@ public:
     void shutdown();
     
     // WebSocket server control
-    bool start_websocket_server(int port);
-    bool stop_websocket_server();
+    bool connect_to_websocket_server(int port);
+    bool disconnect_websocket_client();
     bool is_server_running() const { return ws_running_.load(); }
     int get_server_port() const { return ws_port_; }
     
@@ -65,6 +65,7 @@ public:
     
     // Static access for C callbacks
     static WebSocketAudioModule* instance() { 
+        static std::unique_ptr<WebSocketAudioModule> g_module;
         if (!g_module) {
             g_module = std::unique_ptr<WebSocketAudioModule>(new WebSocketAudioModule());
         }
