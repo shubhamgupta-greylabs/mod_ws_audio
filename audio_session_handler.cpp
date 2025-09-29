@@ -106,7 +106,11 @@ bool AudioSession::stop_audio() {
 }
 
 bool AudioSession::send_json_message(const std::string& message) {
-    if (!websocket_) return false;
+    if (!websocket_) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, 
+                         "WebSocket not connected for UUID: %s\n", call_uuid_.c_str());
+        return false;
+    }
     
     size_t msg_len = message.length();
     std::vector<unsigned char> buffer(LWS_SEND_BUFFER_PRE_PADDING + msg_len + LWS_SEND_BUFFER_POST_PADDING);
@@ -158,6 +162,24 @@ void AudioSession::notify_audio_finished(bool interrupted) {
     send_json_message(json_msg);
 }
 
+void AudioSession::queue_audio(const uint8_t* data, size_t len) {
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    audio_queue.emplace(data, data + len);
+
+    // Ask libwebsockets to call the writeable callback
+    if (wsi) {
+        lws_callback_on_writable(wsi);
+    }
+}
+
+bool AudioSession::pop_audio_chunk(std::vector<uint8_t>& chunk) {
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    if (audio_queue.empty()) return false;
+    chunk = std::move(audio_queue.front());
+    audio_queue.pop();
+    return true;
+}
+
 // Media bug callback for reading audio
 switch_bool_t AudioSession::read_audio_callback(switch_media_bug_t* bug, void* user_data, switch_abc_type_t type) {
     auto* session = static_cast<AudioSession*>(user_data);
@@ -168,7 +190,7 @@ switch_bool_t AudioSession::read_audio_callback(switch_media_bug_t* bug, void* u
             switch_frame_t* frame = switch_core_media_bug_get_read_replace_frame(bug);
             if (frame && frame->data && frame->datalen > 0) {
                 // Send audio data to WebSocket client
-                session->send_audio_data(frame->data, frame->datalen);
+                session->queue_audio(frame->data, frame->datalen);
             }
         }
         break;

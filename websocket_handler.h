@@ -46,7 +46,7 @@ public:
     void shutdown();
     
     // WebSocket server control
-    bool connect_to_websocket_server(int port);
+    bool connect_to_websocket_server(std::string host, int port);
     bool disconnect_websocket_client();
     bool is_server_running() const { return ws_running_.load(); }
     int get_server_port() const { return ws_port_; }
@@ -71,6 +71,22 @@ public:
         }
 
         return g_module.get(); 
+    }
+
+    // Custom logging function
+    static void lws_logger(int level, const char *line) {
+        if (level & LLL_ERR) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "LWS: %s", line);
+        }
+    }
+
+    static std::string strip_ws_scheme(const std::string& url) {
+        if (url.rfind("ws://", 0) == 0) {       // starts with "ws://"
+            return url.substr(5);               // remove first 5 chars
+        } else if (url.rfind("wss://", 0) == 0) { // starts with "wss://"
+            return url.substr(6);               // remove first 6 chars
+        }
+        return url; // no scheme, return as-is
     }
 };
 

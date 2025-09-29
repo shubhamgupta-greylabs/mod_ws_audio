@@ -41,26 +41,30 @@ class AudioSession;
 extern "C" {
     
 SWITCH_STANDARD_API(ws_audio_start_api) {
-    char *argv[6] = { 0 };
-    char wsUri[4096];
+    char  *mycmd = NULL, *argv[6] = { 0 };
 
-    int argc = switch_separate_string(mycmd, ' ', argv, (sizeof(argv) / sizeof(argv[0])));
+    int argc = 0;
+    if (!zstr(cmd) && (mycmd = strdup(cmd))) {
+        argc = switch_separate_string(mycmd, ' ', argv, (sizeof(argv) / sizeof(argv[0])));
+    }
     
     if (!cmd || strlen(cmd) == 0) {
         stream->write_function(stream, "Usage: ws_audio_start <port>\n");
         return SWITCH_STATUS_SUCCESS;
     }
     
-    if (argc < 3) {
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
+                     "ws_audio_start command received: %s %d\n", cmd, argc);
+    if (argc < 2) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, 
                          "Invalid command provided\n");
 
         return SWITCH_STATUS_SUCCESS;
     }
 
-    std::strncpy(wsUri, arg[1], 4096);
-    int port = atoi(argv[2]);
-    
+    std::string host = argv[0];
+    int port = stoi(argv[1]);
+
     if (port <= 0 || port > 65535) {
         stream->write_function(stream, "Invalid port number: %s\n", cmd);
         return SWITCH_STATUS_SUCCESS;

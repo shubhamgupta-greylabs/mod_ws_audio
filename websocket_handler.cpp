@@ -56,7 +56,7 @@ void WebSocketAudioModule::shutdown() {
 bool WebSocketAudioModule::connect_to_websocket_server(std::string host, int port) {
     if (ws_running_) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, 
-                         "WebSocket clienat already running on host:port %s:%d\n", ws_host_, ws_port_);
+                         "WebSocket client already running on host:port %s:%d\n", ws_host_.c_str(), ws_port_);
         return false;
     }
     
@@ -68,7 +68,7 @@ bool WebSocketAudioModule::connect_to_websocket_server(std::string host, int por
     ws_thread_ = std::thread(&WebSocketAudioModule::websocket_client_thread, this);
     
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
-                     "WebSocket server starting on host:port %s:%d\n", host, port);
+                     "WebSocket server starting on host:port %s:%d\n", host.c_str(), port);
     return true;
 }
 
@@ -95,7 +95,7 @@ bool WebSocketAudioModule::disconnect_websocket_client() {
 }
 
 void WebSocketAudioModule::websocket_client_thread() {
-    lws_set_log_level(LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE | LLL_INFO, nullptr);
+    lws_set_log_level(LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE | LLL_INFO, lws_logger);
 
     struct lws_protocols protocols[] = {
         {
@@ -120,17 +120,15 @@ void WebSocketAudioModule::websocket_client_thread() {
         ws_running_ = false;
         return;
     }
+
+    string& hostName = strip_ws_scheme(ws_host_);
     
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
-                     "WebSocket server started on port %d\n", ws_port_);
-    
-                     // Connection info
     struct lws_client_connect_info ccinfo = {};
     ccinfo.context = ws_context_;
-    ccinfo.address = ws_host_.c_str();
-    ccinfo.port = port;
+    ccinfo.address = hostName.c_str();
+    ccinfo.port = ws_port_;
     ccinfo.path = "/";
-    ccinfo.host = ws_host_.c_str();
+    ccinfo.host = hostName.c_str();
     ccinfo.origin = "freeswitch";
     ccinfo.protocol = "ws-audio-protocol";
 
@@ -321,16 +319,23 @@ int WebSocketAudioModule::websocket_callback(struct lws* wsi, enum lws_callback_
                                             void* user, void* in, size_t len) {
     
     auto* module = WebSocketAudioModule::instance();
+    auto* session = static_cast<AudioSession*>(user);
+
     if (!module) return -1;
     
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
+                     "WebSocket callback reason: %d\n", reason);
+
     switch (reason) {
     case LWS_CALLBACK_ESTABLISHED:
         module->handle_websocket_connection(wsi);
         break;
         
-    case LWS_CALLBACK_RECEIVE:
+    case LWS_CALLBACK_CLIENT_RECEIVE:
         if (in && len > 0) {
             std::string message(static_cast<char*>(in), len);
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
+                             "Received WebSocket message: %s\n", message.c_str());
             module->handle_websocket_message(wsi, message);
         }
         break;
@@ -338,6 +343,21 @@ int WebSocketAudioModule::websocket_callback(struct lws* wsi, enum lws_callback_
     case LWS_CALLBACK_CLOSED:
         module->handle_websocket_disconnection(wsi);
         break;
+
+    case LWS_CALLBACK_CLIENT_WRITEABLE:
+        if (session) {
+            std::vector<uint8_t> audio_chunk;
+            if (session->pop_audio_chunk(audio_chunk)) {
+                std::vector<unsigned char> buf(LWS_PRE + audio_chunk.size());
+                memcpy(buf.data() + LWS_PRE, audio_chunk.data(), audio_chunk.size());
+
+                int n = lws_write(wsi, buf.data() + LWS_PRE, audio_chunk.size(), LWS_WRITE_BINARY);
+                if (n < (int)audio_chunk.size()) {
+                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+                                    "Failed to send full audio chunk: %d/%zu\n", n, audio_chunk.size());
+                }
+            }
+        }
         
     default:
         break;

@@ -21,10 +21,17 @@ private:
     std::vector<uint8_t> audio_buffer_;
     size_t audio_buffer_pos_;
     std::mutex audio_mutex_;
+
+    // Audio queue for incoming audio data
+    std::queue<std::vector<uint8_t>> audio_queue;
+    std::mutex queue_mutex;
     
     // Media bug callbacks
     static switch_bool_t read_audio_callback(switch_media_bug_t* bug, void* user_data, switch_abc_type_t type);
     static switch_bool_t write_audio_callback(switch_media_bug_t* bug, void* user_data, switch_abc_type_t type);
+
+    void queue_audio(const uint8_t* data, size_t len);
+    bool pop_audio_chunk(std::vector<uint8_t>& chunk);
     
 public:
     AudioSession(const std::string& uuid, switch_core_session_t* session, struct lws* ws);
