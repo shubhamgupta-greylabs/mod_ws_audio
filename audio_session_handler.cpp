@@ -38,7 +38,7 @@ bool AudioSession::start_streaming() {
     switch_status_t status = switch_core_media_bug_add(
         session_, "ws_audio_read", nullptr,
         read_audio_callback, this, 0,
-        SMBF_READ_REPLACE, &read_bug_
+        SMBF_READ_STREAM, &read_bug_
     );
     
     if (status != SWITCH_STATUS_SUCCESS) {
@@ -198,10 +198,8 @@ switch_bool_t AudioSession::read_audio_callback(switch_media_bug_t* bug, void* u
             frame.buflen = SWITCH_RECOMMENDED_BUFFER_SIZE;
 
             if (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS) {
-                if (frame && frame.data && frame.datalen > 0) {
+                if (frame.data && frame.datalen > 0) {
                     // Send audio data to WebSocket client
-                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
-                             "Read audio frame: datalen=%d\n", frame ? frame.datalen : -1);
                     session->send_audio_data(static_cast<const uint8_t*>(frame.data), frame.datalen);
                 }
             }
@@ -217,9 +215,12 @@ switch_bool_t AudioSession::read_audio_callback(switch_media_bug_t* bug, void* u
 // Media bug callback for writing audio
 switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* user_data, switch_abc_type_t type) {
     auto* session = static_cast<AudioSession*>(user_data);
+
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
+                     "Write audio callback invoked, type=%d, write replace type=%d\n", type, SWITCH_ABC_TYPE_WRITE_REPLACE);
     
     switch (type) {
-        case SWITCH_ABC_TYPE_WRITE: {
+        case SWITCH_ABC_TYPE_WRITE_REPLACE: {
                 if (session->is_playing()) {
                     switch_frame_t* frame = switch_core_media_bug_get_write_replace_frame(bug);
                     if (frame && frame->data) {
