@@ -74,13 +74,12 @@ bool AudioSession::stop_streaming() {
 }
 
 bool AudioSession::play_audio(const std::vector<uint8_t>& audio_data, switch_size_t len) {
-    std::lock_guard<std::mutex> lock(audio_mutex_);
-    
+    std::lock_guard<std::mutex> lock(queue_mutex);
     // Stop current playback
     // audio_playing_ = false;
     
     // Set new audio buffer
-    audio_queue.emplace(audio_data, audio_data + len);
+    audio_queue.emplace(audio_data.begin(), audio_data.begin() + len);
     // audio_buffer_ = audio_data;
     // audio_buffer_pos_ = 0;
     audio_playing_ = true;
@@ -217,33 +216,32 @@ switch_bool_t AudioSession::read_audio_callback(switch_media_bug_t* bug, void* u
 switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* user_data, switch_abc_type_t type) {
     auto* session = static_cast<AudioSession*>(user_data);
 
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
-                     "Write audio callback invoked, type=%d, write replace type=%d\n", type, SWITCH_ABC_TYPE_WRITE_REPLACE);
-    
     switch (type) {
         case SWITCH_ABC_TYPE_WRITE_REPLACE: {
                 if (session->is_playing()) {
                     switch_frame_t* frame = switch_core_media_bug_get_write_replace_frame(bug);
                     if (frame && frame->data) {
-                        std::lock_guard<std::mutex> lock(session->audio_mutex_);
+                        std::lock_guard<std::mutex> lock(session->queue_mutex);
 
-                        while (!session->audio_queue.empty()) {
-                            std::vector<uint8_t> audio_chunk;
-                            if (session->pop_audio_chunk(audio_chunk)) {
-                                size_t to_copy = std::min(audio_chunk.size(), (size_t)frame->datalen);
-                                memcpy(frame->data, audio_chunk.data(), to_copy);
-                                frame->datalen = to_copy;
+                        std::vector<uint8_t> audio_chunk;
+                        if (session->pop_audio_chunk(audio_chunk)) {
+                            size_t to_copy = std::min(audio_chunk.size(), (size_t)frame->datalen);
+                            memcpy(frame->data, audio_chunk.data(), to_copy);
+                            frame->datalen = to_copy;
 
-                                // Check if finished playing
-                                if (session->audio_queue.empty()) {
-                                    session->audio_playing_ = false;
-                                    session->notify_audio_finished(false);
-                                    session->cleanup_audio_buffer();
-                                }
+                            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
+                                             "Wrote %zu bytes of audio data for UUID: %s\n", to_copy, session->call_uuid_.c_str());
+
+                            // Check if finished playing
+                            if (session->audio_queue.empty()) {
+                                session->audio_playing_ = false;
+                                session->notify_audio_finished(false);
+                                session->cleanup_audio_buffer();
                             }
+                        } else {
+                            // No audio chunk available, send silence
+                            memset(frame->data, 0, frame->datalen);
                         }
-
-                        memset(frame->data, 0, frame->datalen);
 
                         // vector<uint8_t> audio_chunk = std::move(session->audio_queue.front());
                         // session->audio_queue.pop();

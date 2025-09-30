@@ -269,7 +269,12 @@ void WebSocketAudioModule::handle_websocket_message(struct lws* wsi, const std::
 
                 switch_size_t decoded_len = switch_b64_decode(audio_data->valuestring, decoded_audio, approx_decoded_len);
                 
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
+                                 "Decoded audio data is %s bytes having len %zu\n", decoded_audio, decoded_len);
+
                 if (decoded_audio && decoded_len > 0) {
+                    std::lock_guard<std::mutex> lock(session->queue_mutex);
+                    
                     std::vector<uint8_t> audio_vec(decoded_audio, decoded_audio + decoded_len);
                     bool success = session->play_audio(audio_vec, decoded_len);
                     
