@@ -73,15 +73,16 @@ bool AudioSession::stop_streaming() {
     return true;
 }
 
-bool AudioSession::play_audio(const std::vector<uint8_t>& audio_data) {
+bool AudioSession::play_audio(const std::vector<uint8_t>& audio_data, switch_size_t len) {
     std::lock_guard<std::mutex> lock(audio_mutex_);
     
     // Stop current playback
-    audio_playing_ = false;
+    // audio_playing_ = false;
     
     // Set new audio buffer
-    audio_buffer_ = audio_data;
-    audio_buffer_pos_ = 0;
+    audio_queue.emplace(audio_data, audio_data + len);
+    // audio_buffer_ = audio_data;
+    // audio_buffer_pos_ = 0;
     audio_playing_ = true;
     
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
@@ -225,25 +226,48 @@ switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* 
                     switch_frame_t* frame = switch_core_media_bug_get_write_replace_frame(bug);
                     if (frame && frame->data) {
                         std::lock_guard<std::mutex> lock(session->audio_mutex_);
-                        
-                        uint32_t remaining = session->audio_buffer_.size() - session->audio_buffer_pos_;
-                        uint32_t to_copy = std::min(remaining, frame->datalen);
-                        
-                        if (to_copy > 0) {
-                            memcpy(frame->data, session->audio_buffer_.data() + session->audio_buffer_pos_, to_copy);
-                            session->audio_buffer_pos_ += to_copy;
-                            frame->datalen = to_copy;
-                            
-                            // Check if finished playing
-                            if (session->audio_buffer_pos_ >= session->audio_buffer_.size()) {
-                                session->audio_playing_ = false;
-                                session->notify_audio_finished(false);
-                                session->cleanup_audio_buffer();
+
+                        while (!session->audio_queue.empty()) {
+                            std::vector<uint8_t> audio_chunk;
+                            if (session->pop_audio_chunk(audio_chunk)) {
+                                size_t to_copy = std::min(audio_chunk.size(), (size_t)frame->datalen);
+                                memcpy(frame->data, audio_chunk.data(), to_copy);
+                                frame->datalen = to_copy;
+
+                                // Check if finished playing
+                                if (session->audio_queue.empty()) {
+                                    session->audio_playing_ = false;
+                                    session->notify_audio_finished(false);
+                                    session->cleanup_audio_buffer();
+                                }
                             }
-                        } else {
-                            // No more audio, send silence
-                            memset(frame->data, 0, frame->datalen);
                         }
+
+                        memset(frame->data, 0, frame->datalen);
+
+                        // vector<uint8_t> audio_chunk = std::move(session->audio_queue.front());
+                        // session->audio_queue.pop();
+                        // memcpy(frame->data, audio_chunk.data(), audio_chunk.size());
+                        // frame->datalen = audio_chunk.size();
+                        
+                        // uint32_t remaining = session->audio_buffer_.size() - session->audio_buffer_pos_;
+                        // uint32_t to_copy = std::min(remaining, frame->datalen);
+                        
+                        // if (to_copy > 0) {
+                        //     memcpy(frame->data, session->audio_buffer_.data() + session->audio_buffer_pos_, to_copy);
+                        //     session->audio_buffer_pos_ += to_copy;
+                        //     frame->datalen = to_copy;
+                            
+                        //     // Check if finished playing
+                        //     if (session->audio_buffer_pos_ >= session->audio_buffer_.size()) {
+                        //         session->audio_playing_ = false;
+                        //         session->notify_audio_finished(false);
+                        //         session->cleanup_audio_buffer();
+                        //     }
+                        // } else {
+                        //     // No more audio, send silence
+                            
+                        // }
                     }
                 }
             }

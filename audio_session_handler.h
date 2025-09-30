@@ -38,7 +38,7 @@ public:
     // Core functionality
     bool start_streaming();
     bool stop_streaming();
-    bool play_audio(const std::vector<uint8_t>& audio_data);
+    bool play_audio(const std::vector<uint8_t>& audio_data, switch_size_t len);
     bool stop_audio();
     
     // Getters
@@ -51,7 +51,7 @@ public:
     bool send_audio_data(const void* data, size_t len);
     void queue_audio(const uint8_t* data, size_t len);
     bool pop_audio_chunk(std::vector<uint8_t>& chunk);
-    
+
 private:
     void cleanup_media_bugs();
     void cleanup_audio_buffer();

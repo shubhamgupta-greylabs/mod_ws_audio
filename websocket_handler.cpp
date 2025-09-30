@@ -271,7 +271,7 @@ void WebSocketAudioModule::handle_websocket_message(struct lws* wsi, const std::
                 
                 if (decoded_audio && decoded_len > 0) {
                     std::vector<uint8_t> audio_vec(decoded_audio, decoded_audio + decoded_len);
-                    bool success = session->play_audio(audio_vec);
+                    bool success = session->play_audio(audio_vec, decoded_len);
                     
                     std::string response = success ?
                         "{\"status\":\"ok\",\"message\":\"Audio playback started\",\"uuid\":\"" + uuid + "\"}":
