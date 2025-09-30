@@ -26,6 +26,8 @@ private:
     // Audio queue for incoming audio data
     std::queue<std::vector<uint8_t>> audio_queue;
     std::mutex queue_mutex;
+
+    std::string ws_msg_buffer;
     
     // Media bug callbacks
     static switch_bool_t read_audio_callback(switch_media_bug_t* bug, void* user_data, switch_abc_type_t type);

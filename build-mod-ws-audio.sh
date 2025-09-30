@@ -16,6 +16,12 @@ if [ -d "$FS_PKGCONFIG" ]; then
     export PKG_CONFIG_PATH=$FS_PKGCONFIG
 fi
 
+# Delete existing build directory if it exists
+if [ -d "build" ]; then
+    echo "Removing existing build directory..."
+    rm -rf build
+fi
+
 mkdir build && cd build
 cmake -DCMAKE_BUILD_TYPE=Release ..
 make

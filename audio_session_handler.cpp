@@ -178,7 +178,9 @@ void AudioSession::queue_audio(const uint8_t* data, size_t len) {
 }
 
 bool AudioSession::pop_audio_chunk(std::vector<uint8_t>& chunk) {
-    std::lock_guard<std::mutex> lock(queue_mutex);
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
+                     "Popping audio chunk for UUID: %s, queue size: %zu\n", call_uuid_.c_str(), audio_queue.size());
+
     if (audio_queue.empty()) return false;
     chunk = std::move(audio_queue.front());
     audio_queue.pop();

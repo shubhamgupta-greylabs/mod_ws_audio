@@ -14,8 +14,8 @@
  */
 class WebSocketAudioModule {
 private:
-    // WebSocket server
-    struct lws_context* ws_context_;
+
+struct lws_context* ws_context_;
     std::thread ws_thread_;
     std::atomic<bool> ws_running_;
     std::string ws_host_;
@@ -62,8 +62,7 @@ public:
     void handle_websocket_connection(struct lws* wsi);
     void handle_websocket_message(struct lws* wsi, const std::string& message);
     void handle_websocket_disconnection(struct lws* wsi);
-    
-    // Static access for C callbacks
+
     static WebSocketAudioModule* instance() { 
         static std::unique_ptr<WebSocketAudioModule> g_module;
         if (!g_module) {
@@ -81,13 +80,13 @@ public:
     }
 
     static std::string strip_ws_scheme(const std::string& url) {
-        if (url.rfind("ws://", 0) == 0) {       // starts with "ws://"
-            return url.substr(5);               // remove first 5 chars
-        } else if (url.rfind("wss://", 0) == 0) { // starts with "wss://"
-            return url.substr(6);               // remove first 6 chars
+        if (url.rfind("ws://", 0) == 0) {       
+            return url.substr(5);               
+        } else if (url.rfind("wss://", 0) == 0) { 
+            return url.substr(6);               
         }
-        return url; // no scheme, return as-is
+        return url; 
     }
 };
 
-#endif // WEBSOCKET_HANDLER_H
+#endif

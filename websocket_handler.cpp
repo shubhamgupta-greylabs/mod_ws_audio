@@ -217,7 +217,7 @@ void WebSocketAudioModule::handle_websocket_connection(struct lws* wsi) {
 }
 
 void WebSocketAudioModule::handle_websocket_message(struct lws* wsi, const std::string& message) {
-    // Parse JSON command
+
     cJSON* json = cJSON_Parse(message.c_str());
     if (!json) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, 
@@ -237,21 +237,21 @@ void WebSocketAudioModule::handle_websocket_message(struct lws* wsi, const std::
     
     std::string cmd = command->valuestring;
     std::string uuid = uuid_item->valuestring;
-    
+
     // Handle different commands
-    if (cmd == "start_audio") {
+    if (cmd == "start_audio") {   
         // Get FreeSWITCH session
         switch_core_session_t* session = switch_core_session_locate(uuid.c_str());
         if (session) {
-            auto audio_session = create_session(uuid, session, wsi);
-            bool success = audio_session->start_streaming();
-            
-            std::string response = success ? 
-                "{\"status\":\"ok\",\"message\":\"Audio streaming started\",\"uuid\":\"" + uuid + "\"}":
-                R"({"status":"error","message":"Failed to start streaming"})";
-            audio_session->send_json_message(response);
-            
-            switch_core_session_rwunlock(session);
+        auto audio_session = create_session(uuid, session, wsi);
+        bool success = audio_session->start_streaming();
+        
+        std::string response = success ? 
+            "{\"status\":\"ok\",\"message\":\"Audio streaming started\",\"uuid\":\"" + uuid + "\"}":
+            R"({"status":"error","message":"Failed to start streaming"})";
+        audio_session->send_json_message(response);
+        
+        switch_core_session_rwunlock(session);
         } else {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, 
                              "Session not found: %s\n", uuid.c_str());
@@ -262,7 +262,6 @@ void WebSocketAudioModule::handle_websocket_message(struct lws* wsi, const std::
         if (audio_data && audio_data->valuestring) {
             auto session = get_session(uuid);
             if (session) {
-                // Decode base64 audio data
                 switch_size_t approx_decoded_len =  strlen(audio_data->valuestring) / 4 * 3;
 
                 char* decoded_audio = (char*)malloc(approx_decoded_len); 
@@ -273,15 +272,8 @@ void WebSocketAudioModule::handle_websocket_message(struct lws* wsi, const std::
                                  "Decoded audio data is %s bytes having len %zu\n", decoded_audio, decoded_len);
 
                 if (decoded_audio && decoded_len > 0) {
-                    std::lock_guard<std::mutex> lock(session->queue_mutex);
-                    
                     std::vector<uint8_t> audio_vec(decoded_audio, decoded_audio + decoded_len);
                     bool success = session->play_audio(audio_vec, decoded_len);
-                    
-                    std::string response = success ?
-                        "{\"status\":\"ok\",\"message\":\"Audio playback started\",\"uuid\":\"" + uuid + "\"}":
-                        R"({"status":"error","message":"Failed to start playback"})";
-                    session->send_json_message(response);
                     
                     switch_safe_free(decoded_audio);
                 }
@@ -334,8 +326,14 @@ int WebSocketAudioModule::websocket_callback(struct lws* wsi, enum lws_callback_
         break;
         
     case LWS_CALLBACK_CLIENT_RECEIVE:
-        if (in && len > 0) {
-            std::string message(static_cast<char*>(in), len);
+        session->ws_msg_buffer.append((const char*)in, len);
+
+        if (lws_is_final_fragment(wsi) && lws_remaining_packet_payload(wsi) == 0 && !session->ws_msg_buffer.empty()) {
+            std::string message = session->ws_msg_buffer;
+            message += '\0'; // Null-terminate the string so cJSON can parse it
+
+            session->ws_msg_buffer.clear();
+
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
                              "Received WebSocket message: %s\n", message.c_str());
             module->handle_websocket_message(wsi, message);
