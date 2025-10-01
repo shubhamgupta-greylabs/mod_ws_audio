@@ -43,6 +43,8 @@ private:
         // WebSocket callbacks
     static int websocket_callback(struct lws* wsi, enum lws_callback_reasons reason,
                                 void* user, void* in, size_t len);
+
+    static std::vector<int16_t> resample_16k_to_8k(const int16_t* input, size_t inputSamples);
 public:
     AudioSession(const std::string& uuid, switch_core_session_t* session, std::string host, int port);
     ~AudioSession();

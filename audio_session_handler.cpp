@@ -347,7 +347,7 @@ bool AudioSession::stop_streaming() {
     return true;
 }
 
-std::vector<int16_t> resample_16k_to_8k(const int16_t* input, size_t inputSamples) {
+std::vector<int16_t> AudioSession::resample_16k_to_8k(const int16_t* input, size_t inputSamples) {
     
     // Convert int16 -> float (-1.0 .. 1.0)
     std::vector<float> inFloat(inputSamples);
