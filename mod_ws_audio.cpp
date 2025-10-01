@@ -74,15 +74,13 @@ extern "C" {
             return SWITCH_STATUS_SUCCESS;
         }
 
-        switch_core_session_t* session = switch_core_session_locate(uuid.c_str());
-
         if (!session) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, 
                 "Call does not exist for uuid: %s", call_uuid);
             return SWITCH_STATUS_SUCCESS;
         }
         
-        bool success = module->connect_to_websocket_server(host, port, call_uuid, session);
+        bool success = module->connect_to_websocket_server(host, port, call_uuid);
         if (success) {
             stream->write_function(stream, "WebSocket server started on port %d\n", port);
         } else {
