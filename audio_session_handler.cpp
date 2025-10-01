@@ -120,15 +120,10 @@ bool AudioSession::disconnect_websocket_client() {
 // WebSocket callback function
 int AudioSession::websocket_callback(struct lws* wsi, enum lws_callback_reasons reason,
                                             void* user, void* in, size_t len) {
-    
-    auto* module = WebSocketAudioModule::instance();
-    auto* session = module->get_session_by_websocket(wsi).get();
-
-    if (!module || !session) return -1;
-    
+   
     switch (reason) {
     case LWS_CALLBACK_ESTABLISHED:
-        module->handle_websocket_connection();
+        handle_websocket_connection();
         break;
         
     case LWS_CALLBACK_CLIENT_RECEIVE:
@@ -154,21 +149,19 @@ int AudioSession::websocket_callback(struct lws* wsi, enum lws_callback_reasons 
         break;
         
     case LWS_CALLBACK_CLOSED:
-        module->handle_websocket_disconnection();
+        handle_websocket_disconnection();
         break;
 
     case LWS_CALLBACK_CLIENT_WRITEABLE:
-        if (session) {
-            std::vector<uint8_t> audio_chunk;
-            if (pop_audio_chunk(audio_chunk)) {
-                std::vector<unsigned char> buf(LWS_PRE + audio_chunk.size());
-                memcpy(buf.data() + LWS_PRE, audio_chunk.data(), audio_chunk.size());
+        std::vector<uint8_t> audio_chunk;
+        if (pop_audio_chunk(audio_chunk)) {
+            std::vector<unsigned char> buf(LWS_PRE + audio_chunk.size());
+            memcpy(buf.data() + LWS_PRE, audio_chunk.data(), audio_chunk.size());
 
-                int n = lws_write(wsi, buf.data() + LWS_PRE, audio_chunk.size(), LWS_WRITE_BINARY);
-                if (n < (int)audio_chunk.size()) {
-                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-                                    "Failed to send full audio chunk: %d/%zu\n", n, audio_chunk.size());
-                }
+            int n = lws_write(wsi, buf.data() + LWS_PRE, audio_chunk.size(), LWS_WRITE_BINARY);
+            if (n < (int)audio_chunk.size()) {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+                                "Failed to send full audio chunk: %d/%zu\n", n, audio_chunk.size());
             }
         }
         
