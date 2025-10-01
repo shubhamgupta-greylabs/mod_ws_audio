@@ -52,6 +52,7 @@ public:
     
     // Getters
     bool is_playing() const { return audio_playing_.load(); }
+    std::string get_uuid() { return call_uuid_; }
     
     // WebSocket communication
     bool send_json_message(const std::string& message);

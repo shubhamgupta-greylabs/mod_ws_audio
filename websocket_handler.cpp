@@ -30,14 +30,14 @@ bool WebSocketAudioModule::initialize(switch_loadable_module_interface_t** modul
 }
 
 void WebSocketAudioModule::shutdown() {
-    for (auto& pair : sessions_) {
+    for (auto& pair : call_sessions{
         pair.second->disconnect_websocket_client();
     }
     
     // Clear all sessions
     {
-        std::lock_guard<std::mutex> lock(sessions_mutex_);
-        sessions_.clear();
+        std::lock_guard<std::mutex> lock(call_sessions_mutex_);
+        call_sessions.clear();
         websocket_sessions_.clear();
     }
     
@@ -81,13 +81,13 @@ bool WebSocketAudioModule::connect_to_websocket_server(std::string host, int por
 }
 
 std::shared_ptr<AudioSession> WebSocketAudioModule::get_audio_session(const std::string& uuid) {
-    std::lock_guard<std::mutex> lock(sessions_mutex_);
-    auto it = sessions_.find(uuid);
-    return (it != sessions_.end()) ? it->second : nullptr;
+    std::lock_guard<std::mutex> lock(call_sessions_mutex_);
+    auto it = call_sessions.find(uuid);
+    return (it != call_sessions.end()) ? it->second : nullptr;
 }
 
 std::shared_ptr<AudioSession> WebSocketAudioModule::get_session_by_websocket(struct lws* ws) {
-    std::lock_guard<std::mutex> lock(sessions_mutex_);
+    std::lock_guard<std::mutex> lock(call_sessions_mutex_);
     auto it = websocket_sessions_.find(ws);
     return (it != websocket_sessions_.end()) ? it->second : nullptr;
 }
