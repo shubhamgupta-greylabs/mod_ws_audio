@@ -141,7 +141,7 @@ int AudioSession::websocket_callback(struct lws* wsi, enum lws_callback_reasons 
             // Prepare verification JSON
             std::string init_msg = "{\"status\":\"ok\",\"message\":\"connected\",\"uuid\":\"" + session->call_uuid_ + "\"}";
 
-            send_json_message(init_msg);
+            session->send_json_message(init_msg);
 
             break;
         }
@@ -350,11 +350,13 @@ bool AudioSession::play_audio(const std::vector<uint8_t>& audio_data, switch_siz
     std::lock_guard<std::mutex> lock(queue_mutex);
     // Stop current playback
     // audio_playing_ = false;
-    
-    // Set new audio buffer
-    audio_queue.emplace(audio_data.begin(), audio_data.begin() + len);
-    // audio_buffer_ = audio_data;
-    // audio_buffer_pos_ = 0;
+
+    size_t frame_len = 640, offset = 0;
+    while (offset < len) {
+        audio_queue.emplace(audio_data.begin(), audio_data.begin() + offset + frame_len);
+        offset += frame_len;
+    }
+
     audio_playing_ = true;
     
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
@@ -483,8 +485,9 @@ switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* 
                     if (frame && frame->data) {
                         std::lock_guard<std::mutex> lock(session->queue_mutex);
 
+                        frame->datalen = 640;
                         std::vector<uint8_t> audio_chunk;
-                        if (session->pop_audio_chunk(audio_chunk)) {
+                        while (session->pop_audio_chunk(audio_chunk)) {
                             size_t to_copy = std::min(audio_chunk.size(), (size_t)frame->datalen);
                             memcpy(frame->data, audio_chunk.data(), to_copy);
                             frame->datalen = to_copy;
@@ -498,9 +501,6 @@ switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* 
                                 session->notify_audio_finished(false);
                                 session->cleanup_audio_buffer();
                             }
-                        } else {
-                            // No audio chunk available, send silence
-                            memset(frame->data, 0, frame->datalen);
                         }
                     }
                 }
