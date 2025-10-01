@@ -133,8 +133,7 @@ int AudioSession::websocket_callback(struct lws* wsi, enum lws_callback_reasons 
         break;
         
     case LWS_CALLBACK_CLIENT_RECEIVE:
-        try
-        {
+        try {
             if (in && len > 0) {
                 session->ws_msg_buffer.append((const char*)in, len);
 
@@ -170,6 +169,7 @@ int AudioSession::websocket_callback(struct lws* wsi, enum lws_callback_reasons 
                                 "Failed to send full audio chunk: %d/%zu\n", n, audio_chunk.size());
             }
         }
+        break;
         
     default:
         break;
@@ -200,11 +200,11 @@ void AudioSession::handle_websocket_message(struct lws* wsi, const std::string& 
     std::string cmd = command->valuestring;
     std::string uuid = uuid_item->valuestring;
 
+    switch_core_session_t* session = switch_core_session_locate(uuid.c_str());
+
     // Handle different commands
     if (cmd == "start_audio") {   
-        // Get FreeSWITCH session
-        switch_core_session_t* session = switch_core_session_locate(uuid.c_str());
-        
+        // Get FreeSWITCH session        
         if (session) {
             bool success = start_streaming();
         
@@ -270,9 +270,13 @@ void AudioSession::handle_websocket_disconnection() {
 
     stop_streaming();
 
-    auto* module = WebSocketAudioModule::instance();
+    /**
+     *  TODO: Need to remove session from WebSocketAudioModule without
+     *  creating circular dependency
+     * */ 
+    // auto* module = WebSocketAudioModule::instance();
 
-    module->remove_session_by_uuid(call_uuid_);
+    // module->remove_session_by_uuid(call_uuid_);
     
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
                      "WebSocket connection closed\n");
@@ -438,7 +442,7 @@ switch_bool_t AudioSession::read_audio_callback(switch_media_bug_t* bug, void* u
             if (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS) {
                 if (frame.data && frame.datalen > 0) {
                     // Send audio data to WebSocket client
-                    send_audio_data(static_cast<const uint8_t*>(frame.data), frame.datalen);
+                    session->send_audio_data(static_cast<const uint8_t*>(frame.data), frame.datalen);
                 }
             }
         }
@@ -456,13 +460,13 @@ switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* 
 
     switch (type) {
         case SWITCH_ABC_TYPE_WRITE_REPLACE: {
-                if (is_playing()) {
+                if (session->is_playing()) {
                     switch_frame_t* frame = switch_core_media_bug_get_write_replace_frame(bug);
                     if (frame && frame->data) {
                         std::lock_guard<std::mutex> lock(queue_mutex);
 
                         std::vector<uint8_t> audio_chunk;
-                        if (pop_audio_chunk(audio_chunk)) {
+                        if (session->pop_audio_chunk(audio_chunk)) {
                             size_t to_copy = std::min(audio_chunk.size(), (size_t)frame->datalen);
                             memcpy(frame->data, audio_chunk.data(), to_copy);
                             frame->datalen = to_copy;
@@ -471,10 +475,10 @@ switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* 
                                              "Wrote %zu bytes of audio data for UUID: %s\n", to_copy, call_uuid_.c_str());
 
                             // Check if finished playing
-                            if (audio_queue.empty()) {
-                                audio_playing_ = false;
-                                notify_audio_finished(false);
-                                cleanup_audio_buffer();
+                            if (session->audio_queue.empty()) {
+                                session->audio_playing_ = false;
+                                session->notify_audio_finished(false);
+                                session->cleanup_audio_buffer();
                             }
                         } else {
                             // No audio chunk available, send silence
