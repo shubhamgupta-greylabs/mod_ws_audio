@@ -266,7 +266,7 @@ void AudioSession::handle_websocket_disconnection() {
 
     auto* module = WebSocketAudioModule::instance();
 
-    module->remove_session_by_websocket(websocket_);
+    module->remove_session_by_uuid(call_uuid_);
     
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
                      "WebSocket connection closed\n");

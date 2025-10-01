@@ -25,8 +25,6 @@ struct lws_context* ws_context_;
     std::unordered_map<std::string, std::shared_ptr<AudioSession>> call_sessions;
     std::mutex call_sessions_mutex_;
 
-    std::unordered_map<struct lws*, std::shared_ptr<AudioSession>> websocket_sessions_;
-    
     // Memory management
     switch_memory_pool_t* memory_pool_;
     switch_mutex_t* module_mutex_;
@@ -44,12 +42,11 @@ public:
     void shutdown();
     
     // WebSocket server control
-    bool connect_to_websocket_server(std::string host, int port, std::string call_uuid);
+    bool connect_to_websocket_server(std::string host, int port, std::string call_uuid, switch_core_session_t* session);
     
     // Session management
     std::shared_ptr<AudioSession> get_audio_session(const std::string& uuid);
-    std::shared_ptr<AudioSession> get_session_by_websocket(struct lws* ws);
-    void remove_session_by_websocket(struct lws* ws);
+    void remove_session_by_uuid(std::string call_uuid);
     
     // WebSocket event handling
     bool disconnect_websocket_client(std::string call_uuid);

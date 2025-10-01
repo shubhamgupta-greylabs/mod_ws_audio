@@ -30,7 +30,7 @@ bool WebSocketAudioModule::initialize(switch_loadable_module_interface_t** modul
 }
 
 void WebSocketAudioModule::shutdown() {
-    for (auto& pair : call_sessions{
+    for (auto& pair : call_sessions) {
         pair.second->disconnect_websocket_client();
     }
     
@@ -38,7 +38,6 @@ void WebSocketAudioModule::shutdown() {
     {
         std::lock_guard<std::mutex> lock(call_sessions_mutex_);
         call_sessions.clear();
-        websocket_sessions_.clear();
     }
     
     if (module_mutex_) {
@@ -57,7 +56,7 @@ void WebSocketAudioModule::shutdown() {
 
 bool WebSocketAudioModule::disconnect_websocket_client(std::string call_uuid) {
     auto audio_session = get_audio_session(call_uuid);
-`
+
     if (audio_session) {
         audio_session->disconnect_websocket_client();
     }
@@ -65,14 +64,14 @@ bool WebSocketAudioModule::disconnect_websocket_client(std::string call_uuid) {
     return true;
 }
 
-bool WebSocketAudioModule::connect_to_websocket_server(std::string host, int port, std::string call_uuid) {
+bool WebSocketAudioModule::connect_to_websocket_server(
+    std::string host, int port, std::string call_uuid, switch_core_session_t* session) {
 
     auto audio_session = std::make_shared<AudioSession>(call_uuid, session, host, port);
 
     {
         std::lock_guard<std::mutex> lock(call_sessions_mutex_);
         call_sessions[call_uuid] = audio_session;
-        websocket_sessions_[ws] = audio_session;
     }
     
     audio_session->connect(host, port);
@@ -86,22 +85,14 @@ std::shared_ptr<AudioSession> WebSocketAudioModule::get_audio_session(const std:
     return (it != call_sessions.end()) ? it->second : nullptr;
 }
 
-std::shared_ptr<AudioSession> WebSocketAudioModule::get_session_by_websocket(struct lws* ws) {
+void WebSocketAudioModule::remove_session_by_uuid(std::string call_uuid) {
     std::lock_guard<std::mutex> lock(call_sessions_mutex_);
-    auto it = websocket_sessions_.find(ws);
-    return (it != websocket_sessions_.end()) ? it->second : nullptr;
-}
-
-void WebSocketAudioModule::remove_session_by_websocket(struct lws* ws) {
-    std::lock_guard<std::mutex> lock(sessions_mutex_);
     
-    auto it = websocket_sessions_.find(ws);
-    if (it != websocket_sessions_.end()) {
-        std::string uuid = it->second->get_uuid();
-        websocket_sessions_.erase(it);
-        call_sessions.erase(uuid);
+    auto it = call_sessions.find(ws);
+    if (it != call_sessions.end()) {
+        call_sessions.erase(call_uuid);
         
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
-                         "Removed session by websocket for UUID: %s\n", uuid.c_str());
+                         "Removed session by websocket for UUID: %s\n", call_uuid.c_str());
     }
 }
