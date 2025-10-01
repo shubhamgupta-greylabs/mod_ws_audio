@@ -11,8 +11,7 @@
  * WebSocketAudioModule Implementation
  */
 WebSocketAudioModule::WebSocketAudioModule() 
-    : ws_context_(nullptr), ws_running_(false), ws_port_(0),
-      memory_pool_(nullptr), module_mutex_(nullptr) {
+    : memory_pool_(nullptr), module_mutex_(nullptr) {
 }
 
 WebSocketAudioModule::~WebSocketAudioModule() {
