@@ -326,14 +326,8 @@ int WebSocketAudioModule::websocket_callback(struct lws* wsi, enum lws_callback_
         break;
         
     case LWS_CALLBACK_CLIENT_RECEIVE:
-        session->ws_msg_buffer.append((const char*)in, len);
-
-        if (lws_is_final_fragment(wsi) && lws_remaining_packet_payload(wsi) == 0 && !session->ws_msg_buffer.empty()) {
-            std::string message = session->ws_msg_buffer;
-            message += '\0'; // Null-terminate the string so cJSON can parse it
-
-            session->ws_msg_buffer.clear();
-
+        if (in && len > 0) {
+            std::string message(static_cast<char*>(in), len);
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
                              "Received WebSocket message: %s\n", message.c_str());
             module->handle_websocket_message(wsi, message);

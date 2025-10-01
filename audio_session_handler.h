@@ -26,8 +26,6 @@ private:
     // Audio queue for incoming audio data
     std::queue<std::vector<uint8_t>> audio_queue;
     std::mutex queue_mutex;
-
-    std::string ws_msg_buffer;
     
     // Media bug callbacks
     static switch_bool_t read_audio_callback(switch_media_bug_t* bug, void* user_data, switch_abc_type_t type);
@@ -42,6 +40,8 @@ public:
     bool stop_streaming();
     bool play_audio(const std::vector<uint8_t>& audio_data, switch_size_t len);
     bool stop_audio();
+
+    std::string ws_msg_buffer; //TODO: Create getter/setter and make the variable private
     
     // Getters
     const std::string& get_uuid() const { return call_uuid_; }
