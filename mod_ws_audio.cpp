@@ -46,13 +46,13 @@ extern "C" {
         }
         
         if (!cmd || strlen(cmd) == 0) {
-            stream->write_function(stream, "Usage: ws_audio_start <port>\n");
+            stream->write_function(stream, "Usage: ws_audio_start <host> <port> <call_uuid>\n");
             return SWITCH_STATUS_SUCCESS;
         }
         
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
                         "ws_audio_start command received: %s %d\n", cmd, argc);
-        if (argc < 2) {
+        if (argc < 3) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, 
                             "Invalid command provided\n");
 
@@ -61,6 +61,7 @@ extern "C" {
 
         std::string host = argv[0];
         int port = std::stoi(argv[1]);
+        std::string call_uuid = argv[2];
 
         if (port <= 0 || port > 65535) {
             stream->write_function(stream, "Invalid port number: %s\n", cmd);
@@ -73,13 +74,7 @@ extern "C" {
             return SWITCH_STATUS_SUCCESS;
         }
         
-        if (module->is_server_running()) {
-            stream->write_function(stream, "WebSocket server already running on port %d\n", 
-                                module->get_server_port());
-            return SWITCH_STATUS_SUCCESS;
-        }
-        
-        bool success = module->connect_to_websocket_server(host, port);
+        bool success = module->connect_to_websocket_server(host, port, call_uuid);
         if (success) {
             stream->write_function(stream, "WebSocket server started on port %d\n", port);
         } else {
@@ -92,17 +87,30 @@ extern "C" {
     // API to disconnect from webSocket server
     SWITCH_STANDARD_API(ws_audio_stop_api) {
         auto* module = WebSocketAudioModule::instance();
+
+        char  *mycmd = NULL, *argv[6] = { 0 };
+
+        int argc = 0;
+        if (!zstr(cmd) && (mycmd = strdup(cmd))) {
+            argc = switch_separate_string(mycmd, ' ', argv, (sizeof(argv) / sizeof(argv[0])));
+        }
+        
+        if (!cmd || strlen(cmd) == 0) {
+            stream->write_function(stream, "Usage: ws_audio_stop <call_uuid>\n");
+            return SWITCH_STATUS_SUCCESS;
+        }
+        
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
+                        "ws_audio_start command received: %s %d\n", cmd, argc);
+
+        std::string call_uuid = argv[2];
+        
         if (!module) {
             stream->write_function(stream, "Module not initialized\n");
             return SWITCH_STATUS_SUCCESS;
         }
         
-        if (!module->is_server_running()) {
-            stream->write_function(stream, "WebSocket server is not running\n");
-            return SWITCH_STATUS_SUCCESS;
-        }
-        
-        bool success = module->disconnect_websocket_client();
+        bool success = module->disconnect_websocket_client(call_uuid);
         if (success) {
             stream->write_function(stream, "WebSocket server stopped\n");
         } else {

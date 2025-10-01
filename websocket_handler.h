@@ -22,9 +22,10 @@ struct lws_context* ws_context_;
     int ws_port_;
     
     // Session management
-    std::unordered_map<std::string, std::shared_ptr<AudioSession>> sessions_;
+    std::unordered_map<std::string, std::shared_ptr<AudioSession>> call_sessions;
+    std::mutex call_sessions_mutex_;
+
     std::unordered_map<struct lws*, std::shared_ptr<AudioSession>> websocket_sessions_;
-    std::mutex sessions_mutex_;
     
     // Memory management
     switch_memory_pool_t* memory_pool_;
@@ -33,9 +34,6 @@ struct lws_context* ws_context_;
     // WebSocket callbacks
     static int websocket_callback(struct lws* wsi, enum lws_callback_reasons reason,
                                 void* user, void* in, size_t len);
-    
-    // Server thread
-    void websocket_client_thread();
     
 public:
     WebSocketAudioModule();
@@ -47,21 +45,14 @@ public:
     
     // WebSocket server control
     bool connect_to_websocket_server(std::string host, int port);
-    bool disconnect_websocket_client();
-    bool is_server_running() const { return ws_running_.load(); }
-    int get_server_port() const { return ws_port_; }
     
     // Session management
-    std::shared_ptr<AudioSession> create_session(const std::string& uuid, switch_core_session_t* session, struct lws* ws);
-    std::shared_ptr<AudioSession> get_session(const std::string& uuid);
+    std::shared_ptr<AudioSession> get_audio_session(const std::string& uuid);
     std::shared_ptr<AudioSession> get_session_by_websocket(struct lws* ws);
-    void remove_session(const std::string& uuid);
     void remove_session_by_websocket(struct lws* ws);
     
     // WebSocket event handling
-    void handle_websocket_connection(struct lws* wsi);
-    void handle_websocket_message(struct lws* wsi, const std::string& message);
-    void handle_websocket_disconnection(struct lws* wsi);
+    bool disconnect_websocket_client(std::string call_uuid);
 
     static WebSocketAudioModule* instance() { 
         static std::unique_ptr<WebSocketAudioModule> g_module;
@@ -70,22 +61,6 @@ public:
         }
 
         return g_module.get(); 
-    }
-
-    // Custom logging function
-    static void lws_logger(int level, const char *line) {
-        if (level & LLL_ERR) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "LWS: %s", line);
-        }
-    }
-
-    static std::string strip_ws_scheme(const std::string& url) {
-        if (url.rfind("ws://", 0) == 0) {       
-            return url.substr(5);               
-        } else if (url.rfind("wss://", 0) == 0) { 
-            return url.substr(6);               
-        }
-        return url; 
     }
 };
 

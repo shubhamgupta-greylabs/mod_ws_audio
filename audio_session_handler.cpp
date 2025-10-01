@@ -10,10 +10,10 @@
 /**
  * AudioSession Implementation
  */
-AudioSession::AudioSession(const std::string& uuid, switch_core_session_t* session, struct lws* ws)
-    : call_uuid_(uuid), session_(session), websocket_(ws), 
+AudioSession::AudioSession(const std::string& uuid, switch_core_session_t* session, std::string host, int port)
+    : call_uuid_(uuid), session_(session), websocket_(nullptr), 
       read_bug_(nullptr), write_bug_(nullptr),
-      audio_playing_(false), audio_buffer_pos_(0) {
+      audio_playing_(false), audio_buffer_pos_(0), ws_host_(host), ws_port_(port), running(false) {
     
     channel_ = switch_core_session_get_channel(session_);
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
@@ -25,6 +25,258 @@ AudioSession::~AudioSession() {
     cleanup_audio_buffer();
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
                      "Destroyed AudioSession for UUID: %s\n", call_uuid_.c_str());
+}
+
+void AudioSession::connect(std::string host, int port) {
+
+    running = true;
+    ws_host_ = host;
+    ws_port_ = port;
+
+    ws_thread_ = std::thread(&AudioSession::websocket_client_thread, this);
+    ws_thread_.detach();
+}
+
+void AudioSession::websocket_client_thread() {
+    lws_set_log_level(LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE | LLL_INFO, lws_logger);
+
+    struct lws_protocols protocols[] = {
+        {
+            "ws-audio-protocol",
+            websocket_callback,
+            0,
+            4096,
+        },
+        { nullptr, nullptr, 0, 0 } // terminator
+    };
+    
+    struct lws_context_creation_info info = {};
+    info.port = CONTEXT_PORT_NO_LISTEN;
+    info.protocols = protocols;
+    info.gid = -1;
+    info.uid = -1;
+    
+    ws_context_ = lws_create_context(&info);
+    if (!ws_context_) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, 
+                         "Failed to create WebSocket context\n");
+        ws_running_ = false;
+        return;
+    }
+
+    std::string hostName = strip_ws_scheme(ws_host_);
+    
+    struct lws_client_connect_info ccinfo = {};
+    ccinfo.context = ws_context_;
+    ccinfo.address = hostName.c_str();
+    ccinfo.port = ws_port_;
+    ccinfo.path = "/";
+    ccinfo.host = hostName.c_str();
+    ccinfo.origin = "freeswitch";
+    ccinfo.protocol = "ws-audio-protocol";
+
+    websocket_ = lws_client_connect_via_info(&ccinfo);
+    if (!websocket_) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+                         "Failed to initiate WebSocket client connection\n");
+        running = false;
+        return;
+    }
+
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+                     "WebSocket client thread started, connecting to %s:%d\n",
+                     ws_host_.c_str(), ws_port_);
+
+    while (running) {
+        lws_service(ws_context_, 20);
+    }
+    
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
+                     "WebSocket server thread exiting\n");
+}
+
+bool AudioSession::disconnect_websocket_client() {
+    if (!running) {
+        return true;
+    }
+    
+    running = false;
+    
+    // Wait for thread to finish
+    if (ws_thread_.joinable()) {
+        ws_thread_.join();
+    }
+    
+    if (ws_context_) {
+        lws_context_destroy(ws_context_);
+        ws_context_ = nullptr;
+    }
+    
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
+                     "WebSocket client disconnected\n");
+    return true;
+}
+
+// WebSocket callback function
+int AudioSession::websocket_callback(struct lws* wsi, enum lws_callback_reasons reason,
+                                            void* user, void* in, size_t len) {
+    
+    auto* module = WebSocketAudioModule::instance();
+    auto* session = module->get_session_by_websocket(wsi).get();
+
+    if (!module || !session) return -1;
+    
+    switch (reason) {
+    case LWS_CALLBACK_ESTABLISHED:
+        module->handle_websocket_connection();
+        break;
+        
+    case LWS_CALLBACK_CLIENT_RECEIVE:
+        try
+        {
+            if (in && len > 0) {
+                ws_msg_buffer.append((const char*)in, len);
+
+                if (lws_is_final_fragment(wsi) && lws_remaining_packet_payload(wsi) == 0) {
+                    std::string message = ws_msg_buffer;
+
+                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
+                                    "Received WebSocket message: %s\n", message.c_str());
+                    handle_websocket_message(wsi, message);
+
+                    ws_msg_buffer.clear();
+                }
+            }
+        } catch(const std::exception& e) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, 
+                             "Exception in WebSocket receive handling: %s\n", e.what());
+        }
+        break;
+        
+    case LWS_CALLBACK_CLOSED:
+        module->handle_websocket_disconnection();
+        break;
+
+    case LWS_CALLBACK_CLIENT_WRITEABLE:
+        if (session) {
+            std::vector<uint8_t> audio_chunk;
+            if (pop_audio_chunk(audio_chunk)) {
+                std::vector<unsigned char> buf(LWS_PRE + audio_chunk.size());
+                memcpy(buf.data() + LWS_PRE, audio_chunk.data(), audio_chunk.size());
+
+                int n = lws_write(wsi, buf.data() + LWS_PRE, audio_chunk.size(), LWS_WRITE_BINARY);
+                if (n < (int)audio_chunk.size()) {
+                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+                                    "Failed to send full audio chunk: %d/%zu\n", n, audio_chunk.size());
+                }
+            }
+        }
+        
+    default:
+        break;
+    }
+    
+    return 0;
+}
+
+void AudioSession::handle_websocket_message(struct lws* wsi, const std::string& message) {
+
+    cJSON* json = cJSON_Parse(message.c_str());
+    if (!json) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, 
+                         "Failed to parse JSON: %s\n", message.c_str());
+        return;
+    }
+    
+    cJSON* command = cJSON_GetObjectItem(json, "command");
+    cJSON* uuid_item = cJSON_GetObjectItem(json, "uuid");
+    
+    if (!command || !uuid_item) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, 
+                         "Missing command or uuid in JSON\n");
+        cJSON_Delete(json);
+        return;
+    }
+    
+    std::string cmd = command->valuestring;
+    std::string uuid = uuid_item->valuestring;
+
+    // Handle different commands
+    if (cmd == "start_audio") {   
+        // Get FreeSWITCH session
+        switch_core_session_t* session = switch_core_session_locate(uuid.c_str());
+        
+        if (session) {
+            bool success = start_streaming();
+        
+            std::string response = success ? 
+                "{\"status\":\"ok\",\"message\":\"Audio streaming started\",\"uuid\":\"" + uuid + "\"}":
+                R"({"status":"error","message":"Failed to start streaming"})";
+        
+            send_json_message(response);
+        
+            switch_core_session_rwunlock(session);
+        } else {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, 
+                             "Session not found: %s\n", uuid.c_str());
+        }
+    }
+    else if (cmd == "play_audio") {
+        cJSON* audio_data = cJSON_GetObjectItem(json, "audio_data");
+        if (audio_data && audio_data->valuestring) {
+
+            if (session) {
+                switch_size_t approx_decoded_len =  strlen(audio_data->valuestring) / 4 * 3;
+
+                char* decoded_audio = (char*)malloc(approx_decoded_len); 
+
+                switch_size_t decoded_len = switch_b64_decode(audio_data->valuestring, decoded_audio, approx_decoded_len);
+                
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
+                                 "Decoded audio data is %s bytes having len %zu\n", decoded_audio, decoded_len);
+
+                if (decoded_audio && decoded_len > 0) {
+                    std::vector<uint8_t> audio_vec(decoded_audio, decoded_audio + decoded_len);
+                    bool success = play_audio(audio_vec, decoded_len);
+                    
+                    switch_safe_free(decoded_audio);
+                }
+            }
+        }
+    }
+    else if (cmd == "stop_audio") {
+        if (session) {
+            stop_audio();
+        }
+    }
+    else if (cmd == "stop_streaming") {
+        if (session) {
+            stop_streaming();
+            // TODO: Might need to remove the websocket connection too
+
+            std::string response = R"({"status":"ok","message":"Audio streaming stopped"})";
+            send_json_message(response);
+        }
+    }
+    
+    cJSON_Delete(json);
+}
+
+void AudioSession::handle_websocket_connection() {
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
+                     "WebSocket connection established\n");
+}
+
+void AudioSession::handle_websocket_disconnection() {
+
+    stop_streaming();
+
+    auto* module = WebSocketAudioModule::instance();
+
+    module->remove_session_by_websocket(websocket_);
+    
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
+                     "WebSocket connection closed\n");
 }
 
 bool AudioSession::start_streaming() {
@@ -162,21 +414,6 @@ void AudioSession::notify_audio_finished(bool interrupted) {
     send_json_message(json_msg);
 }
 
-void AudioSession::queue_audio(const uint8_t* data, size_t len) {
-    std::lock_guard<std::mutex> lock(queue_mutex);
-    audio_queue.emplace(data, data + len);
-
-    // Ask libwebsockets to call the writeable callback
-    if (websocket_) {
-        lws_callback_on_writable(websocket_);
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
-                         "Queued audio data for UUID: %s, size: %zu bytes\n", call_uuid_.c_str(), len);
-    } else {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, 
-                         "WebSocket not connected for UUID: %s\n", call_uuid_.c_str());
-    }
-}
-
 bool AudioSession::pop_audio_chunk(std::vector<uint8_t>& chunk) {
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
                      "Popping audio chunk for UUID: %s, queue size: %zu\n", call_uuid_.c_str(), audio_queue.size());
@@ -202,7 +439,7 @@ switch_bool_t AudioSession::read_audio_callback(switch_media_bug_t* bug, void* u
             if (switch_core_media_bug_read(bug, &frame, SWITCH_TRUE) == SWITCH_STATUS_SUCCESS) {
                 if (frame.data && frame.datalen > 0) {
                     // Send audio data to WebSocket client
-                    session->send_audio_data(static_cast<const uint8_t*>(frame.data), frame.datalen);
+                    send_audio_data(static_cast<const uint8_t*>(frame.data), frame.datalen);
                 }
             }
         }
@@ -220,54 +457,30 @@ switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* 
 
     switch (type) {
         case SWITCH_ABC_TYPE_WRITE_REPLACE: {
-                if (session->is_playing()) {
+                if (is_playing()) {
                     switch_frame_t* frame = switch_core_media_bug_get_write_replace_frame(bug);
                     if (frame && frame->data) {
-                        std::lock_guard<std::mutex> lock(session->queue_mutex);
+                        std::lock_guard<std::mutex> lock(queue_mutex);
 
                         std::vector<uint8_t> audio_chunk;
-                        if (session->pop_audio_chunk(audio_chunk)) {
+                        if (pop_audio_chunk(audio_chunk)) {
                             size_t to_copy = std::min(audio_chunk.size(), (size_t)frame->datalen);
                             memcpy(frame->data, audio_chunk.data(), to_copy);
                             frame->datalen = to_copy;
 
                             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
-                                             "Wrote %zu bytes of audio data for UUID: %s\n", to_copy, session->call_uuid_.c_str());
+                                             "Wrote %zu bytes of audio data for UUID: %s\n", to_copy, call_uuid_.c_str());
 
                             // Check if finished playing
-                            if (session->audio_queue.empty()) {
-                                session->audio_playing_ = false;
-                                session->notify_audio_finished(false);
-                                session->cleanup_audio_buffer();
+                            if (audio_queue.empty()) {
+                                audio_playing_ = false;
+                                notify_audio_finished(false);
+                                cleanup_audio_buffer();
                             }
                         } else {
                             // No audio chunk available, send silence
                             memset(frame->data, 0, frame->datalen);
                         }
-
-                        // vector<uint8_t> audio_chunk = std::move(session->audio_queue.front());
-                        // session->audio_queue.pop();
-                        // memcpy(frame->data, audio_chunk.data(), audio_chunk.size());
-                        // frame->datalen = audio_chunk.size();
-                        
-                        // uint32_t remaining = session->audio_buffer_.size() - session->audio_buffer_pos_;
-                        // uint32_t to_copy = std::min(remaining, frame->datalen);
-                        
-                        // if (to_copy > 0) {
-                        //     memcpy(frame->data, session->audio_buffer_.data() + session->audio_buffer_pos_, to_copy);
-                        //     session->audio_buffer_pos_ += to_copy;
-                        //     frame->datalen = to_copy;
-                            
-                        //     // Check if finished playing
-                        //     if (session->audio_buffer_pos_ >= session->audio_buffer_.size()) {
-                        //         session->audio_playing_ = false;
-                        //         session->notify_audio_finished(false);
-                        //         session->cleanup_audio_buffer();
-                        //     }
-                        // } else {
-                        //     // No more audio, send silence
-                            
-                        // }
                     }
                 }
             }
