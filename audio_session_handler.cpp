@@ -36,7 +36,6 @@ void AudioSession::connect(std::string host, int port) {
     ws_port_ = port;
 
     ws_thread_ = std::thread(&AudioSession::websocket_client_thread, this);
-    ws_thread_.detach();
 }
 
 void AudioSession::websocket_client_thread() {
@@ -85,6 +84,8 @@ void AudioSession::websocket_client_thread() {
         return;
     }
 
+    lws_set_wsi_user(websocket_, this);
+
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
                      "WebSocket client thread started, connecting to %s:%d\n",
                      ws_host_.c_str(), ws_port_);
@@ -123,11 +124,27 @@ bool AudioSession::disconnect_websocket_client() {
 int AudioSession::websocket_callback(struct lws* wsi, enum lws_callback_reasons reason,
                                             void* user, void* in, size_t len) {
                                                 
-    AudioSession* session = static_cast<AudioSession*>(user);
+    AudioSession* session = static_cast<AudioSession*>(lws_wsi_user(wsi));
 
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Session exists %s\n", session ? "true": "false");
+                        
     if (!session) return 0;
 
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Callback reason %d, %d\n", reason, LWS_CALLBACK_CLIENT_ESTABLISHED);
+
     switch (reason) {
+    case LWS_CALLBACK_CLIENT_ESTABLISHED:
+        {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+                              "WebSocket connected for call %s\n", session->call_uuid_.c_str());
+
+            // Prepare verification JSON
+            std::string init_msg = "{\"status\":\"ok\",\"message\":\"connected\",\"uuid\":\"" + session->call_uuid_ + "\"}";
+
+            send_json_message(init_msg);
+
+            break;
+        }
     case LWS_CALLBACK_ESTABLISHED:
         session->handle_websocket_connection();
         break;
