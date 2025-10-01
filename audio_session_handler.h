@@ -6,7 +6,9 @@
 #include <atomic>
 #include <mutex>
 #include <queue>
+#include <thread>
 #include <switch.h>
+#include <libwebsockets.h>
 
 class AudioSession {
 private:

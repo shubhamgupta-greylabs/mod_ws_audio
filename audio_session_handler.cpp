@@ -3,6 +3,8 @@
  */
 #include <string>
 #include <vector>
+#include <thread>
+
 #include <switch.h>
 #include "audio_session_handler.h"
 #include <libwebsockets.h>

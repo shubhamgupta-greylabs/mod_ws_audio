@@ -3,7 +3,6 @@
 
 #include <string>
 #include <unordered_map>
-#include <thread>
 #include <atomic>
 #include <memory>
 #include <libwebsockets.h>
@@ -15,12 +14,6 @@
 class WebSocketAudioModule {
 private:
 
-struct lws_context* ws_context_;
-    std::thread ws_thread_;
-    std::atomic<bool> ws_running_;
-    std::string ws_host_;
-    int ws_port_;
-    
     // Session management
     std::unordered_map<std::string, std::shared_ptr<AudioSession>> call_sessions;
     std::mutex call_sessions_mutex_;
