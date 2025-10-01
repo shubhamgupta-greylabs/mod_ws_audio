@@ -8,6 +8,7 @@
 #include <switch.h>
 #include "audio_session_handler.h"
 #include <libwebsockets.h>
+#include <samplerate.h>
 
 /**
  * AudioSession Implementation
@@ -253,7 +254,7 @@ void AudioSession::handle_websocket_message(struct lws* wsi, const std::string& 
                                  "Decoded audio data is %s bytes having len %zu\n", decoded_audio, decoded_len);
 
                 if (decoded_audio && decoded_len > 0) {
-                    std::vector<uint8_t> audio_vec(decoded_audio, decoded_audio + decoded_len);
+                    std::vector<int16_t> audio_vec(decoded_audio, decoded_audio + decoded_len);
                     bool success = play_audio(audio_vec, decoded_len);
                     
                     switch_safe_free(decoded_audio);
@@ -346,14 +347,52 @@ bool AudioSession::stop_streaming() {
     return true;
 }
 
-bool AudioSession::play_audio(const std::vector<uint8_t>& audio_data, switch_size_t len) {
-    std::lock_guard<std::mutex> lock(queue_mutex);
-    // Stop current playback
-    // audio_playing_ = false;
+std::vector<int16_t> resample_16k_to_8k(const int16_t* input, size_t inputSamples) {
+    
+    // Convert int16 -> float (-1.0 .. 1.0)
+    std::vector<float> inFloat(inputSamples);
+    for (size_t i = 0; i < inputSamples; i++)
+        inFloat[i] = input[i] / 32768.0f;
 
-    size_t frame_len = 640, offset = 0;
+    // Prepare output buffer: target sample count = inputSamples * 0.5
+    size_t outSamples = size_t(inputSamples * 0.5) + 1;
+    std::vector<float> outFloat(outSamples);
+
+    // SRC_DATA struct
+    SRC_DATA data{};
+    data.data_in = inFloat.data();
+    data.input_frames = inputSamples;
+    data.data_out = outFloat.data();
+    data.output_frames = outSamples;
+    data.src_ratio = 0.5; // 16kHz -> 8kHz
+    data.end_of_input = 0;
+
+    int error = src_simple(&data, SRC_SINC_FASTEST, 1);
+    if (error) {
+        // handle error
+        return {};
+    }
+
+    // Convert float -> int16
+    std::vector<int16_t> output(data.output_frames_gen);
+    for (size_t i = 0; i < data.output_frames_gen; i++) {
+        float v = outFloat[i] * 32768.0f;
+        v = std::max(-32768.0f, std::min(32767.0f, v));
+        output[i] = static_cast<int16_t>(v);
+    }
+
+    return output;
+}
+
+
+bool AudioSession::play_audio(const std::vector<int16_t>& audio_data, switch_size_t len) {
+    std::lock_guard<std::mutex> lock(queue_mutex);
+    
+    vector<int16_t>& audio_samples_8k = resample_16k_to_8k(audio_data, len);
+
+    size_t frame_len = 320, offset = 0;
     while (offset < len) {
-        audio_queue.emplace(audio_data.begin(), audio_data.begin() + offset + frame_len);
+        audio_queue.emplace(audio_samples_8k.begin(), audio_samples_8k.begin() + offset + frame_len);
         offset += frame_len;
     }
 
@@ -485,7 +524,6 @@ switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* 
                     if (frame && frame->data) {
                         std::lock_guard<std::mutex> lock(session->queue_mutex);
 
-                        frame->datalen = 640;
                         std::vector<uint8_t> audio_chunk;
                         while (session->pop_audio_chunk(audio_chunk)) {
                             size_t to_copy = std::min(audio_chunk.size(), (size_t)frame->datalen);

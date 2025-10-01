@@ -33,7 +33,7 @@ private:
     std::mutex audio_mutex_;
 
     // Audio queue for incoming audio data
-    std::queue<std::vector<uint8_t>> audio_queue;
+    std::queue<std::vector<int16_t>> audio_queue;
     std::mutex queue_mutex;
     
     // Media bug callbacks
