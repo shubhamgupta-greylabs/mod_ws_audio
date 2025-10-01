@@ -157,7 +157,7 @@ int AudioSession::websocket_callback(struct lws* wsi, enum lws_callback_reasons 
         session->handle_websocket_disconnection();
         break;
 
-    case LWS_CALLBACK_CLIENT_WRITEABLE:
+    case LWS_CALLBACK_CLIENT_WRITEABLE: {
         std::vector<uint8_t> audio_chunk;
         if (session->pop_audio_chunk(audio_chunk)) {
             std::vector<unsigned char> buf(LWS_PRE + audio_chunk.size());
@@ -170,6 +170,7 @@ int AudioSession::websocket_callback(struct lws* wsi, enum lws_callback_reasons 
             }
         }
         break;
+    }
         
     default:
         break;
@@ -463,7 +464,7 @@ switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* 
                 if (session->is_playing()) {
                     switch_frame_t* frame = switch_core_media_bug_get_write_replace_frame(bug);
                     if (frame && frame->data) {
-                        std::lock_guard<std::mutex> lock(queue_mutex);
+                        std::lock_guard<std::mutex> lock(session->queue_mutex);
 
                         std::vector<uint8_t> audio_chunk;
                         if (session->pop_audio_chunk(audio_chunk)) {
@@ -472,7 +473,7 @@ switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* 
                             frame->datalen = to_copy;
 
                             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
-                                             "Wrote %zu bytes of audio data for UUID: %s\n", to_copy, call_uuid_.c_str());
+                                             "Wrote %zu bytes of audio data for UUID: %s\n", to_copy, session->call_uuid_.c_str());
 
                             // Check if finished playing
                             if (session->audio_queue.empty()) {
