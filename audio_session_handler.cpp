@@ -62,7 +62,7 @@ void AudioSession::websocket_client_thread() {
     if (!ws_context_) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, 
                          "Failed to create WebSocket context\n");
-        ws_running_ = false;
+        running = false;
         return;
     }
 
@@ -122,26 +122,30 @@ bool AudioSession::disconnect_websocket_client() {
 // WebSocket callback function
 int AudioSession::websocket_callback(struct lws* wsi, enum lws_callback_reasons reason,
                                             void* user, void* in, size_t len) {
-   
+                                                
+    AudioSession* session = static_cast<AudioSession*>(user);
+
+    if (!session) return 0;
+
     switch (reason) {
     case LWS_CALLBACK_ESTABLISHED:
-        handle_websocket_connection();
+        session->handle_websocket_connection();
         break;
         
     case LWS_CALLBACK_CLIENT_RECEIVE:
         try
         {
             if (in && len > 0) {
-                ws_msg_buffer.append((const char*)in, len);
+                session->ws_msg_buffer.append((const char*)in, len);
 
                 if (lws_is_final_fragment(wsi) && lws_remaining_packet_payload(wsi) == 0) {
-                    std::string message = ws_msg_buffer;
+                    std::string message = session->ws_msg_buffer;
 
                     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
                                     "Received WebSocket message: %s\n", message.c_str());
-                    handle_websocket_message(wsi, message);
+                    session->handle_websocket_message(wsi, message);
 
-                    ws_msg_buffer.clear();
+                    session->ws_msg_buffer.clear();
                 }
             }
         } catch(const std::exception& e) {
@@ -151,12 +155,12 @@ int AudioSession::websocket_callback(struct lws* wsi, enum lws_callback_reasons 
         break;
         
     case LWS_CALLBACK_CLOSED:
-        handle_websocket_disconnection();
+        session->handle_websocket_disconnection();
         break;
 
     case LWS_CALLBACK_CLIENT_WRITEABLE:
         std::vector<uint8_t> audio_chunk;
-        if (pop_audio_chunk(audio_chunk)) {
+        if (session->pop_audio_chunk(audio_chunk)) {
             std::vector<unsigned char> buf(LWS_PRE + audio_chunk.size());
             memcpy(buf.data() + LWS_PRE, audio_chunk.data(), audio_chunk.size());
 

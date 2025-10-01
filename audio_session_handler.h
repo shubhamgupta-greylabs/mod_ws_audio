@@ -40,6 +40,9 @@ private:
     static switch_bool_t read_audio_callback(switch_media_bug_t* bug, void* user_data, switch_abc_type_t type);
     static switch_bool_t write_audio_callback(switch_media_bug_t* bug, void* user_data, switch_abc_type_t type);
     
+        // WebSocket callbacks
+    static int websocket_callback(struct lws* wsi, enum lws_callback_reasons reason,
+                                void* user, void* in, size_t len);
 public:
     AudioSession(const std::string& uuid, switch_core_session_t* session, std::string host, int port);
     ~AudioSession();

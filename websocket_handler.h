@@ -21,10 +21,7 @@ private:
     // Memory management
     switch_memory_pool_t* memory_pool_;
     switch_mutex_t* module_mutex_;
-    
-    // WebSocket callbacks
-    static int websocket_callback(struct lws* wsi, enum lws_callback_reasons reason,
-                                void* user, void* in, size_t len);
+
     
 public:
     WebSocketAudioModule();
