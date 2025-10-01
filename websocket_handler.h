@@ -44,7 +44,7 @@ public:
     void shutdown();
     
     // WebSocket server control
-    bool connect_to_websocket_server(std::string host, int port);
+    bool connect_to_websocket_server(std::string host, int port, std::string call_uuid);
     
     // Session management
     std::shared_ptr<AudioSession> get_audio_session(const std::string& uuid);
