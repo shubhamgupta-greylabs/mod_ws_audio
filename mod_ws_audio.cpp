@@ -73,12 +73,6 @@ extern "C" {
             stream->write_function(stream, "Module not initialized\n");
             return SWITCH_STATUS_SUCCESS;
         }
-
-        if (!session) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, 
-                "Call does not exist for uuid: %s", call_uuid);
-            return SWITCH_STATUS_SUCCESS;
-        }
         
         bool success = module->connect_to_websocket_server(host, port, call_uuid);
         if (success) {

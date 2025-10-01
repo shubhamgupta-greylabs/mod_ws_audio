@@ -67,7 +67,7 @@ bool WebSocketAudioModule::disconnect_websocket_client(std::string call_uuid) {
 bool WebSocketAudioModule::connect_to_websocket_server(
     std::string host, int port, std::string call_uuid) {
 
-    switch_core_session_t* session = switch_core_session_locate(uuid.c_str());
+    switch_core_session_t* session = switch_core_session_locate(call_uuid.c_str());
     auto audio_session = std::make_shared<AudioSession>(call_uuid, session, host, port);
 
     {
@@ -89,7 +89,7 @@ std::shared_ptr<AudioSession> WebSocketAudioModule::get_audio_session(const std:
 void WebSocketAudioModule::remove_session_by_uuid(std::string call_uuid) {
     std::lock_guard<std::mutex> lock(call_sessions_mutex_);
     
-    auto it = call_sessions.find(ws);
+    auto it = call_sessions.find(call_uuid);
     if (it != call_sessions.end()) {
         call_sessions.erase(call_uuid);
         
