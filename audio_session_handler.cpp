@@ -10,6 +10,7 @@
 #include <libwebsockets.h>
 #include <samplerate.h>
 #include <speex/speex_resampler.h>
+#include <stdexcept>
 
 /**
  * AudioSession Implementation
@@ -318,7 +319,7 @@ bool AudioSession::start_streaming() {
         return false;
     }
 
-    switch_core_media_bug_flag_t flags = 
+    switch_media_bug_flag_t flags = 
         SMBF_WRITE_REPLACE | 
         SMBF_READ_REPLACE | 
         SMBF_WRITE_STREAM |    // ← This is the key
@@ -368,7 +369,7 @@ bool AudioSession::stop_streaming() {
 std::vector<int16_t> AudioSession::resample_16k_to_8k(const std::vector<int16_t>& in) {
     
     spx_uint32_t in_rate = 16000, out_rate = 8000;
-    vector<int16_t> out;
+    std::vector<int16_t> out;
 
     spx_uint32_t in_len = in.size();
     spx_uint32_t out_len = in.size() * out_rate / in_rate + 16;
@@ -377,14 +378,12 @@ std::vector<int16_t> AudioSession::resample_16k_to_8k(const std::vector<int16_t>
     speex_resampler_process_int(resampler, 0, in.data(), &in_len, out.data(), &out_len);
     out.resize(out_len);
 
-    speex_resampler_destroy(resampler);
-
     return out;
 }
 
 
-bool AudioSession::play_audio(const std::vector<int16_t>& audio_data) {    
-    std::vector<int16_t> audio_samples_8k = resample_16k_to_8k(audio_data, len);
+bool AudioSession::play_audio(const std::vector<int16_t>& audio_data, size_t len) {    
+    std::vector<int16_t> audio_samples_8k = resample_16k_to_8k(audio_data);
 
     size_t frame_len = 320, offset = 0;
 
@@ -522,6 +521,26 @@ switch_bool_t AudioSession::read_audio_callback(switch_media_bug_t* bug, void* u
     return SWITCH_TRUE;
 }
 
+uint8_t AudioSession::linear_to_ulaw(int16_t sample) {
+    const int cBias = 0x84;
+    const int cClip = 32635;
+
+    int sign = (sample >> 8) & 0x80;
+    if (sign) sample = -sample;
+    if (sample > cClip) sample = cClip;
+    sample += cBias;
+
+    int exponent = 7;
+    for (int expMask = 0x4000; (sample & expMask) == 0 && exponent > 0; expMask >>= 1) {
+        exponent--;
+    }
+
+    int mantissa = (sample >> ((exponent == 0) ? 4 : (exponent + 3))) & 0x0F;
+    uint8_t ulawByte = ~(sign | (exponent << 4) | mantissa);
+
+    return ulawByte;
+}
+
 // Media bug callback for writing audio
 switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* user_data, switch_abc_type_t type) {
     auto* session = static_cast<AudioSession*>(user_data);
@@ -535,8 +554,12 @@ switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* 
 
                         std::vector<int16_t> audio_chunk;
                         if (session->pop_audio_chunk(audio_chunk)) {
-                            size_t to_copy = std::min(audio_chunk.size(), (size_t)frame->datalen);
-                            memcpy(frame->data, audio_chunk.data(), to_copy);
+                            std::vector<uint8_t> converted_chunk(audio_chunk.size());
+                            for (int i=0; i<audio_chunk.size(); ++i) {
+                                converted_chunk[i] = linear_to_ulaw(audio_chunk[i]);
+                            }
+                            size_t to_copy = std::min(converted_chunk.size(), (size_t)frame->datalen);
+                            memcpy(frame->data, converted_chunk.data(), to_copy);
                             frame->datalen = to_copy;
 
                             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 

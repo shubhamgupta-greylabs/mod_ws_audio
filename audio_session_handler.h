@@ -9,6 +9,7 @@
 #include <thread>
 #include <switch.h>
 #include <libwebsockets.h>
+#include <speex/speex_resampler.h>
 
 class AudioSession {
 private:
@@ -45,7 +46,8 @@ private:
     static int websocket_callback(struct lws* wsi, enum lws_callback_reasons reason,
                                 void* user, void* in, size_t len);
 
-    static std::vector<int16_t> resample_16k_to_8k(const std::vector<int16_t>& input);
+    static uint8_t AudioSession::linear_to_ulaw(int16_t sample);
+    std::vector<int16_t> resample_16k_to_8k(const std::vector<int16_t>& input);
 public:
     AudioSession(const std::string& uuid, switch_core_session_t* session, std::string host, int port);
     ~AudioSession();
