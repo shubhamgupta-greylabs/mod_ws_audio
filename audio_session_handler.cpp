@@ -9,6 +9,7 @@
 #include "audio_session_handler.h"
 #include <libwebsockets.h>
 #include <samplerate.h>
+#include <speex/speex_resampler.h>
 
 /**
  * AudioSession Implementation
@@ -21,6 +22,15 @@ AudioSession::AudioSession(const std::string& uuid, switch_core_session_t* sessi
     channel_ = switch_core_session_get_channel(session_);
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
                      "Created AudioSession for UUID: %s\n", uuid.c_str());
+    
+    int channels = 1;
+    spx_uint32_t in_rate = 16000, out_rate = 8000;
+    int quality = 10;
+    int err;
+    resampler = speex_resampler_init(channels, in_rate, out_rate, quality, &err);
+    if (!resampler || err != RESAMPLER_ERR_SUCCESS) {
+        throw std::runtime_error("Failed to initialize Speex resampler");
+    }
 }
 
 AudioSession::~AudioSession() {
@@ -347,45 +357,25 @@ bool AudioSession::stop_streaming() {
     return true;
 }
 
-std::vector<int16_t> AudioSession::resample_16k_to_8k(const std::vector<int16_t>& input, size_t inputSamples) {
+std::vector<int16_t> AudioSession::resample_16k_to_8k(const std::vector<int16_t>& in) {
     
-    // Convert int16 -> float (-1.0 .. 1.0)
-    std::vector<float> inFloat(inputSamples);
-    for (size_t i = 0; i < inputSamples; i++)
-        inFloat[i] = input[i] / 32768.0f;
+    spx_uint32_t in_rate = 16000, out_rate = 8000;
+    vector<int16_t> out;
 
-    // Prepare output buffer: target sample count = inputSamples * 0.5
-    size_t outSamples = size_t(inputSamples * 0.5) + 1;
-    std::vector<float> outFloat(outSamples);
+    spx_uint32_t in_len = in.size();
+    spx_uint32_t out_len = in.size() * out_rate / in_rate + 16;
+    out.resize(out_len);
 
-    // SRC_DATA struct
-    SRC_DATA data{};
-    data.data_in = inFloat.data();
-    data.input_frames = inputSamples;
-    data.data_out = outFloat.data();
-    data.output_frames = outSamples;
-    data.src_ratio = 0.5; // 16kHz -> 8kHz
-    data.end_of_input = 0;
+    speex_resampler_process_int(resampler, 0, in.data(), &in_len, out.data(), &out_len);
+    out.resize(out_len);
 
-    int error = src_simple(&data, SRC_SINC_BEST_QUALITY, 1);
-    if (error) {
-        // handle error
-        return {};
-    }
+    speex_resampler_destroy(resampler);
 
-    // Convert float -> int16
-    std::vector<int16_t> output(data.output_frames_gen);
-    for (size_t i = 0; i < data.output_frames_gen; i++) {
-        float v = outFloat[i] * 32768.0f;
-        v = std::max(-32768.0f, std::min(32767.0f, v));
-        output[i] = static_cast<int16_t>(v);
-    }
-
-    return output;
+    return out;
 }
 
 
-bool AudioSession::play_audio(const std::vector<int16_t>& audio_data, switch_size_t len) {    
+bool AudioSession::play_audio(const std::vector<int16_t>& audio_data) {    
     std::vector<int16_t> audio_samples_8k = resample_16k_to_8k(audio_data, len);
 
     size_t frame_len = 320, offset = 0;
@@ -536,7 +526,7 @@ switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* 
                         std::lock_guard<std::mutex> lock(session->queue_mutex);
 
                         std::vector<int16_t> audio_chunk;
-                        while (session->pop_audio_chunk(audio_chunk)) {
+                        if (session->pop_audio_chunk(audio_chunk)) {
                             size_t to_copy = std::min(audio_chunk.size(), (size_t)frame->datalen);
                             memcpy(frame->data, audio_chunk.data(), to_copy);
                             frame->datalen = to_copy;

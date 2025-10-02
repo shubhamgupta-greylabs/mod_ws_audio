@@ -22,6 +22,13 @@ pkg_check_modules(LIBWEBSOCKETS REQUIRED libwebsockets)
 # find libsamplerate
 pkg_check_modules(SAMPLERATE REQUIRED samplerate)
 
+find_path(SPEEXDSP_INCLUDE_DIR NAMES speex/speex_resampler.h)
+find_library(SPEEXDSP_LIBRARY NAMES speexdsp)
+
+if(NOT SPEEXDSP_INCLUDE_DIR OR NOT SPEEXDSP_LIBRARY)
+    message(FATAL_ERROR "SpeexDSP not found. Install libspeexdsp-dev")
+endif()
+
 include_directories(${SAMPLERATE_INCLUDE_DIRS})
 
 pkg_check_modules(FreeSWITCH REQUIRED IMPORTED_TARGET freeswitch)
@@ -40,6 +47,15 @@ target_link_libraries(mod_ws_audio PRIVATE
     PkgConfig::FreeSWITCH 
     pthread
 )
+
+include_directories(${SPEEXDSP_INCLUDE_DIR})
+
+add_library(mod_ws_audio SHARED
+    mod_ws_audio.cpp
+    audio_session_handler.cpp
+)
+
+target_link_libraries(mod_ws_audio PRIVATE ${SPEEXDSP_LIBRARY})
 
 target_include_directories(mod_ws_audio PRIVATE ${SAMPLERATE_INCLUDE_DIRS})
 target_link_libraries(mod_ws_audio PRIVATE ${SAMPLERATE_LIBRARIES})

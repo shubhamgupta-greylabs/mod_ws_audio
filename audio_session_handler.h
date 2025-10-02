@@ -21,6 +21,7 @@ private:
     std::atomic<bool> running;
     std::thread ws_thread_;
     struct lws_context* ws_context_;
+    SpeexResamplerState* resampler;
 
     // Host Info
     std::string ws_host_;
@@ -44,7 +45,7 @@ private:
     static int websocket_callback(struct lws* wsi, enum lws_callback_reasons reason,
                                 void* user, void* in, size_t len);
 
-    static std::vector<int16_t> resample_16k_to_8k(const std::vector<int16_t>& input, size_t inputSamples);
+    static std::vector<int16_t> resample_16k_to_8k(const std::vector<int16_t>& input);
 public:
     AudioSession(const std::string& uuid, switch_core_session_t* session, std::string host, int port);
     ~AudioSession();
