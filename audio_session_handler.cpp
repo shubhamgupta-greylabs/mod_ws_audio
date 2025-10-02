@@ -317,12 +317,20 @@ bool AudioSession::start_streaming() {
                          "Invalid session or channel for UUID: %s\n", call_uuid_.c_str());
         return false;
     }
+
+    switch_core_media_bug_flag_t flags = 
+        SMBF_WRITE_REPLACE | 
+        SMBF_READ_REPLACE | 
+        SMBF_WRITE_STREAM |    // ← This is the key
+        SMBF_READ_STREAM |     // ← For reading raw audio too
+        SMBF_ANSWER_REQ | 
+        SMBF_NO_PAUSE;
     
     // Add media bug for reading audio from call
     switch_status_t status = switch_core_media_bug_add(
         session_, "ws_audio_read", nullptr,
         read_audio_callback, this, 0,
-        SMBF_READ_STREAM, &read_bug_
+        flags, &read_bug_
     );
     
     if (status != SWITCH_STATUS_SUCCESS) {
@@ -335,7 +343,7 @@ bool AudioSession::start_streaming() {
     status = switch_core_media_bug_add(
         session_, "ws_audio_write", nullptr,
         write_audio_callback, this, 0,
-        SMBF_WRITE_REPLACE, &write_bug_
+        flags, &write_bug_
     );
     
     if (status != SWITCH_STATUS_SUCCESS) {
