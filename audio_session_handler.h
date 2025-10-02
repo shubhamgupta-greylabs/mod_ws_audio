@@ -28,7 +28,7 @@ private:
     
     // Audio playback
     std::atomic<bool> audio_playing_;
-    std::vector<uint8_t> audio_buffer_;
+    std::vector<int16_t> audio_buffer_;
     size_t audio_buffer_pos_;
     std::mutex audio_mutex_;
 

@@ -176,7 +176,7 @@ int AudioSession::websocket_callback(struct lws* wsi, enum lws_callback_reasons 
         break;
 
     case LWS_CALLBACK_CLIENT_WRITEABLE: {
-        std::vector<uint8_t> audio_chunk;
+        std::vector<int16_t> audio_chunk;
         if (session->pop_audio_chunk(audio_chunk)) {
             std::vector<unsigned char> buf(LWS_PRE + audio_chunk.size());
             memcpy(buf.data() + LWS_PRE, audio_chunk.data(), audio_chunk.size());
@@ -385,25 +385,33 @@ std::vector<int16_t> AudioSession::resample_16k_to_8k(const std::vector<int16_t>
 }
 
 
-bool AudioSession::play_audio(const std::vector<int16_t>& audio_data, switch_size_t len) {
-    std::lock_guard<std::mutex> lock(queue_mutex);
-    
+bool AudioSession::play_audio(const std::vector<int16_t>& audio_data, switch_size_t len) {    
     std::vector<int16_t> audio_samples_8k = resample_16k_to_8k(audio_data, len);
 
     size_t frame_len = 320, offset = 0;
-    while (offset < audio_samples_8k.size()) {
-        size_t remaining = audio_samples_8k.size() - offset;
-        size_t slice_len = std::min(frame_len, remaining);
 
-        audio_queue.emplace(audio_samples_8k.begin(), audio_samples_8k.begin() + offset + slice_len);
-        offset += slice_len;
+    audio_buffer_.insert(audio_buffer_.end(), audio_samples_8k.begin(), audio_samples_8k.end());
+
+    if (audio_buffer_.size() >= frame_len) {
+        std::lock_guard<std::mutex> lock(queue_mutex);
+
+        while (offset < audio_buffer_.size()) {
+            size_t remaining = audio_buffer_.size() - offset;
+            size_t slice_len = std::min(frame_len, remaining);
+
+            audio_queue.emplace(audio_buffer_.begin(), audio_buffer_.begin() + offset + slice_len);
+            offset += slice_len;
+        }
+
+        audio_playing_ = true;
+    
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
+                     "Started audio playback for UUID: %s, size: %zu bytes\n", 
+                     call_uuid_.c_str(), audio_buffer_.size());
+        
+        audio_buffer_.clear();
     }
 
-    audio_playing_ = true;
-    
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
-                     "Started audio playback for UUID: %s, size: %zu bytes\n", 
-                     call_uuid_.c_str(), audio_samples_8k.size());
     return true;
 }
 
