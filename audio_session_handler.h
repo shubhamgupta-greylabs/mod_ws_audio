@@ -47,7 +47,8 @@ private:
                                 void* user, void* in, size_t len);
 
     static uint8_t linear_to_ulaw(int16_t sample);
-    static void log_frame_bytes(switch_frame_t* frame, size_t max_bytes = 32)
+    static void log_frame_bytes(switch_frame_t* frame, size_t max_bytes = 320);
+    static void log_queue_bytes(std::vector<int16_t>& frame, size_t max_bytes = 320);
 
     std::vector<int16_t> resample_16k_to_8k(const std::vector<int16_t>& input);
 public:

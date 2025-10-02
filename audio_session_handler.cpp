@@ -541,7 +541,7 @@ uint8_t AudioSession::linear_to_ulaw(int16_t sample) {
     return ulawByte;
 }
 
-void AudioSession::log_frame_bytes(switch_frame_t* frame, size_t max_bytes = 32) {
+void AudioSession::log_frame_bytes(switch_frame_t* frame, size_t max_bytes) {
     uint8_t* data = (uint8_t*)frame->data;
     size_t n = frame->datalen < max_bytes ? frame->datalen : max_bytes;
 
@@ -554,7 +554,22 @@ void AudioSession::log_frame_bytes(switch_frame_t* frame, size_t max_bytes = 32)
     if (frame->datalen > max_bytes) hexstr += "...";
 
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
-                      "Frame bytes (%zu bytes): %s\n", frame->datalen, hexstr.c_str());
+                      "Frame bytes (%u bytes): %s\n", frame->datalen, hexstr.c_str());
+}
+
+void AudioSession::log_queue_bytes(std::vector<int16_t>& frame, size_t max_bytes) {
+    size_t n = frame.size() < max_bytes ? frame.size() : max_bytes;
+
+    char hexbuf[4];
+    std::string hexstr;
+    for (size_t i = 0; i < n; ++i) {
+        snprintf(hexbuf, sizeof(hexbuf), "%02x ", frame[i]);
+        hexstr += hexbuf;
+    }
+    if (frame.size() > max_bytes) hexstr += "...";
+
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
+                      "Queue bytes (%u bytes): %s\n", frame->datalen, hexstr.c_str());
 }
 
 // Media bug callback for writing audio
@@ -574,6 +589,7 @@ switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* 
                             memcpy(frame->data, audio_chunk.data(), to_copy);
                             frame->datalen = to_copy;
                             log_frame_bytes(frame);
+                            log_queue_bytes(audio_chunk);
 
                             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
                                              "Wrote %zu bytes of audio data for UUID: %s\n", to_copy, session->call_uuid_.c_str());
