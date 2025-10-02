@@ -50,11 +50,6 @@ target_link_libraries(mod_ws_audio PRIVATE
 
 include_directories(${SPEEXDSP_INCLUDE_DIR})
 
-add_library(mod_ws_audio SHARED
-    mod_ws_audio.cpp
-    audio_session_handler.cpp
-)
-
 target_link_libraries(mod_ws_audio PRIVATE ${SPEEXDSP_LIBRARY})
 
 target_include_directories(mod_ws_audio PRIVATE ${SAMPLERATE_INCLUDE_DIRS})
