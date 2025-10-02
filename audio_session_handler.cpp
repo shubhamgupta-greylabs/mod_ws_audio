@@ -541,6 +541,22 @@ uint8_t AudioSession::linear_to_ulaw(int16_t sample) {
     return ulawByte;
 }
 
+void AudioSession::log_frame_bytes(switch_frame_t* frame, size_t max_bytes = 32) {
+    uint8_t* data = (uint8_t*)frame->data;
+    size_t n = frame->datalen < max_bytes ? frame->datalen : max_bytes;
+
+    char hexbuf[4];
+    std::string hexstr;
+    for (size_t i = 0; i < n; ++i) {
+        snprintf(hexbuf, sizeof(hexbuf), "%02x ", data[i]);
+        hexstr += hexbuf;
+    }
+    if (frame->datalen > max_bytes) hexstr += "...";
+
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
+                      "Frame bytes (%zu bytes): %s\n", frame->datalen, hexstr.c_str());
+}
+
 // Media bug callback for writing audio
 switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* user_data, switch_abc_type_t type) {
     auto* session = static_cast<AudioSession*>(user_data);
@@ -561,6 +577,7 @@ switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* 
                             size_t to_copy = std::min(converted_chunk.size(), (size_t)frame->datalen);
                             memcpy(frame->data, converted_chunk.data(), to_copy);
                             frame->datalen = to_copy;
+                            log_frame_bytes(frame);
 
                             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
                                              "Wrote %zu bytes of audio data for UUID: %s\n", to_copy, session->call_uuid_.c_str());
@@ -569,7 +586,7 @@ switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* 
                             if (session->audio_queue.empty()) {
                                 session->audio_playing_ = false;
                                 session->notify_audio_finished(false);
-                                session->cleanup_audio_buffer();
+                                // session->cleanup_audio_buffer();
                             }
                         }
                     }
