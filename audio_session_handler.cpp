@@ -347,7 +347,7 @@ bool AudioSession::stop_streaming() {
     return true;
 }
 
-std::vector<int16_t> AudioSession::resample_16k_to_8k(const int16_t* input, size_t inputSamples) {
+std::vector<int16_t> AudioSession::resample_16k_to_8k(const std::vector<int16_t>& input, size_t inputSamples) {
     
     // Convert int16 -> float (-1.0 .. 1.0)
     std::vector<float> inFloat(inputSamples);
@@ -367,7 +367,7 @@ std::vector<int16_t> AudioSession::resample_16k_to_8k(const int16_t* input, size
     data.src_ratio = 0.5; // 16kHz -> 8kHz
     data.end_of_input = 0;
 
-    int error = src_simple(&data, SRC_SINC_FASTEST, 1);
+    int error = src_simple(&data, SRC_SINC_BEST_QUALITY, 1);
     if (error) {
         // handle error
         return {};
@@ -388,19 +388,22 @@ std::vector<int16_t> AudioSession::resample_16k_to_8k(const int16_t* input, size
 bool AudioSession::play_audio(const std::vector<int16_t>& audio_data, switch_size_t len) {
     std::lock_guard<std::mutex> lock(queue_mutex);
     
-    vector<int16_t>& audio_samples_8k = resample_16k_to_8k(audio_data, len);
+    std::vector<int16_t> audio_samples_8k = resample_16k_to_8k(audio_data, len);
 
     size_t frame_len = 320, offset = 0;
-    while (offset < len) {
-        audio_queue.emplace(audio_samples_8k.begin(), audio_samples_8k.begin() + offset + frame_len);
-        offset += frame_len;
+    while (offset < audio_samples_8k.size()) {
+        size_t remaining = audio_samples_8k.size() - offset;
+        size_t slice_len = std::min(frame_len, remaining);
+
+        audio_queue.emplace(audio_samples_8k.begin(), audio_samples_8k.begin() + offset + slice_len);
+        offset += slice_len;
     }
 
     audio_playing_ = true;
     
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
                      "Started audio playback for UUID: %s, size: %zu bytes\n", 
-                     call_uuid_.c_str(), audio_data.size());
+                     call_uuid_.c_str(), audio_samples_8k.size());
     return true;
 }
 
@@ -476,7 +479,7 @@ void AudioSession::notify_audio_finished(bool interrupted) {
     send_json_message(json_msg);
 }
 
-bool AudioSession::pop_audio_chunk(std::vector<uint8_t>& chunk) {
+bool AudioSession::pop_audio_chunk(std::vector<int16_t>& chunk) {
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
                      "Popping audio chunk for UUID: %s, queue size: %zu\n", call_uuid_.c_str(), audio_queue.size());
 
@@ -524,7 +527,7 @@ switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* 
                     if (frame && frame->data) {
                         std::lock_guard<std::mutex> lock(session->queue_mutex);
 
-                        std::vector<uint8_t> audio_chunk;
+                        std::vector<int16_t> audio_chunk;
                         while (session->pop_audio_chunk(audio_chunk)) {
                             size_t to_copy = std::min(audio_chunk.size(), (size_t)frame->datalen);
                             memcpy(frame->data, audio_chunk.data(), to_copy);

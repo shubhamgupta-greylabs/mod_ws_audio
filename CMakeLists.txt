@@ -19,6 +19,10 @@ find_package(PkgConfig REQUIRED)
 
 # find libwebsockets
 pkg_check_modules(LIBWEBSOCKETS REQUIRED libwebsockets)
+# find libsamplerate
+pkg_check_modules(SAMPLERATE REQUIRED samplerate)
+
+include_directories(${SAMPLERATE_INCLUDE_DIRS})
 
 pkg_check_modules(FreeSWITCH REQUIRED IMPORTED_TARGET freeswitch)
 pkg_get_variable(FS_MOD_DIR freeswitch modulesdir)
@@ -36,6 +40,9 @@ target_link_libraries(mod_ws_audio PRIVATE
     PkgConfig::FreeSWITCH 
     pthread
 )
+
+target_include_directories(mod_ws_audio PRIVATE ${SAMPLERATE_INCLUDE_DIRS})
+target_link_libraries(mod_ws_audio PRIVATE ${SAMPLERATE_LIBRARIES})
 
 target_link_libraries(mod_ws_audio PRIVATE 
     PkgConfig::FreeSWITCH 
