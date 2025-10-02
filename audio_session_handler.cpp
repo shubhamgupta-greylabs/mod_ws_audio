@@ -570,12 +570,8 @@ switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* 
 
                         std::vector<int16_t> audio_chunk;
                         if (session->pop_audio_chunk(audio_chunk)) {
-                            std::vector<uint8_t> converted_chunk(audio_chunk.size());
-                            for (int i=0; i<audio_chunk.size(); ++i) {
-                                converted_chunk[i] = linear_to_ulaw(audio_chunk[i]);
-                            }
-                            size_t to_copy = std::min(converted_chunk.size(), (size_t)frame->datalen);
-                            memcpy(frame->data, converted_chunk.data(), to_copy);
+                            size_t to_copy = std::min(audio_chunk.size(), (size_t)frame->datalen);
+                            memcpy(frame->data, audio_chunk.data(), to_copy);
                             frame->datalen = to_copy;
                             log_frame_bytes(frame);
 
