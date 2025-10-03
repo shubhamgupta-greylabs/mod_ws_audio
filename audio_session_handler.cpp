@@ -396,7 +396,7 @@ bool AudioSession::play_audio(const std::vector<uint8_t>& audio_data, size_t len
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
                      "Size of incoming sample is %zu\n", audio_data.size());
 
-    audio_buffer_.insert(audio_buffer_.end(), audio_samples_8k.begin(), audio_samples_8k.end());
+    audio_buffer_.insert(audio_buffer_.end(), audio_data.begin(), audio_data.end());
 
     size_t offset = 0;
     if (!is_playing() && audio_buffer_.size() >= FRAME_SIZE_PCMU) {
@@ -482,7 +482,7 @@ void AudioSession::cleanup_audio_buffer() {
     audio_buffer_.clear();
     
     std::queue<std::vector<uint8_t>> temp_queue;
-    std::lock_guard<std::mutex> lock(session->queue_mutex);
+    std::lock_guard<std::mutex> lock(queue_mutex);
 
     audio_queue.swap(temp_queue);
     audio_buffer_pos_ = 0;
