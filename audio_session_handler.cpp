@@ -405,10 +405,6 @@ bool AudioSession::play_audio(const std::vector<uint8_t>& audio_data, size_t len
 }
 
 void AudioSession::update_audio_queue() {
-
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
-                     "Size of buffer is %zu\n", audio_data.size());
-
     size_t offset = 0;
     if (!is_playing() && audio_buffer_.size() >= FRAME_SIZE_PCMU) {
         while (offset < audio_buffer_.size()) {
