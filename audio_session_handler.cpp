@@ -397,17 +397,20 @@ bool AudioSession::play_audio(const std::vector<uint8_t>& audio_data, size_t len
                      "Size of incoming sample is %zu\n", audio_data.size());
 
     audio_buffer_.insert(audio_buffer_.end(), audio_data.begin(), audio_data.end());
-
+    
+    std::lock_guard<std::mutex> lock(queue_mutex);
     update_audio_queue();
+
     return true;
 }
 
 void AudioSession::update_audio_queue() {
 
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
+                     "Size of buffer is %zu\n", audio_data.size());
+
     size_t offset = 0;
     if (!is_playing() && audio_buffer_.size() >= FRAME_SIZE_PCMU) {
-        std::lock_guard<std::mutex> lock(queue_mutex);
-
         while (offset < audio_buffer_.size()) {
             size_t remaining = audio_buffer_.size() - offset;
             size_t slice_len = std::min(FRAME_SIZE_PCMU, remaining);
@@ -627,7 +630,8 @@ switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* 
 
                         std::vector<uint8_t> audio_chunk;
                         if (session->pop_audio_chunk(audio_chunk)) {
-                            size_t to_copy = std::min(audio_chunk.size()*sizeof(uint8_t), (size_t)frame->datalen);
+                            frame->datalen = FRAME_SIZE_PCMU;
+                            size_t to_copy = std::min(audio_chunk.size(), (size_t)frame->datalen);
 
                             memcpy(frame->data, audio_chunk.data(), to_copy);
                             frame->datalen = to_copy;
