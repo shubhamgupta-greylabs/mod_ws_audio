@@ -62,7 +62,7 @@ public:
     // Core functionality
     bool start_streaming();
     bool stop_streaming();
-    bool play_audio(const std::vector<int16_t>& audio_data, switch_size_t len);
+    bool play_audio(const std::vector<uint8_t>& audio_data, switch_size_t len);
     bool stop_audio();
 
     std::string ws_msg_buffer; //TODO: Create getter/setter and make the variable private
@@ -74,7 +74,7 @@ public:
     // WebSocket communication
     bool send_json_message(const std::string& message);
     bool send_audio_data(const void* data, size_t len);
-    bool pop_audio_chunk(std::vector<int16_t>& chunk);
+    bool pop_audio_chunk(std::vector<uint8_t>& chunk);
 
     // Websocket event handling
     void connect(std::string host, int port);
