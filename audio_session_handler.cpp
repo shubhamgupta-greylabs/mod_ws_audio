@@ -398,6 +398,12 @@ bool AudioSession::play_audio(const std::vector<uint8_t>& audio_data, size_t len
 
     audio_buffer_.insert(audio_buffer_.end(), audio_data.begin(), audio_data.end());
 
+    update_audio_queue();
+    return true;
+}
+
+void AudioSession::update_audio_queue() {
+
     size_t offset = 0;
     if (!is_playing() && audio_buffer_.size() >= FRAME_SIZE_PCMU) {
         std::lock_guard<std::mutex> lock(queue_mutex);
@@ -418,8 +424,6 @@ bool AudioSession::play_audio(const std::vector<uint8_t>& audio_data, size_t len
         
         audio_buffer_.clear();
     }
-
-    return true;
 }
 
 bool AudioSession::stop_audio() {
@@ -635,6 +639,7 @@ switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* 
                             if (session->audio_queue.empty()) {
                                 session->audio_playing_ = false;
                                 session->notify_audio_finished(false);
+                                session->update_audio_queue();
                             }
                         }
                     }

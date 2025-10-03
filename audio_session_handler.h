@@ -67,6 +67,7 @@ public:
     bool stop_streaming();
     bool play_audio(const std::vector<uint8_t>& audio_data, switch_size_t len);
     bool stop_audio();
+    void update_audio_queue();
 
     std::string ws_msg_buffer; //TODO: Create getter/setter and make the variable private
     
