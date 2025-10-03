@@ -211,21 +211,6 @@ int AudioSession::websocket_callback(struct lws* wsi, enum lws_callback_reasons 
     case LWS_CALLBACK_CLOSED:
         session->handle_websocket_disconnection();
         break;
-
-    case LWS_CALLBACK_CLIENT_WRITEABLE: {
-        std::vector<uint8_t> audio_chunk;
-        if (session->pop_audio_chunk(audio_chunk)) {
-            std::vector<unsigned char> buf(LWS_PRE + audio_chunk.size());
-            memcpy(buf.data() + LWS_PRE, audio_chunk.data(), audio_chunk.size());
-
-            int n = lws_write(wsi, buf.data() + LWS_PRE, audio_chunk.size(), LWS_WRITE_BINARY);
-            if (n < (int)audio_chunk.size()) {
-                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-                                "Failed to send full audio chunk: %d/%zu\n", n, audio_chunk.size());
-            }
-        }
-        break;
-    }
         
     default:
         break;
@@ -258,9 +243,7 @@ void AudioSession::handle_websocket_message(struct lws* wsi, const std::string& 
 
     switch_core_session_t* session = switch_core_session_locate(uuid.c_str());
 
-    // Handle different commands
     if (cmd == "start_audio") {   
-        // Get FreeSWITCH session        
         if (session) {
             bool success = start_streaming();
         
@@ -409,26 +392,19 @@ std::vector<int16_t> AudioSession::resample_16k_to_8k(const std::vector<int16_t>
 
 
 bool AudioSession::play_audio(const std::vector<uint8_t>& audio_data, size_t len) {    
-    //std::vector<int16_t> audio_samples_8k = resample_16k_to_8k(audio_data);
-    std::vector<uint8_t> audio_samples_8k = audio_data;
-    size_t frame_len = 320, offset = 0;
+    
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
-                     "Size of incoming sample is %zu\n", audio_samples_8k.size());
+                     "Size of incoming sample is %zu\n", audio_data.size());
 
-
-    if (audio_samples_8k.size() % 2 == 1) {
-        audio_samples_8k.pop_back();
-    }
     audio_buffer_.insert(audio_buffer_.end(), audio_samples_8k.begin(), audio_samples_8k.end());
 
-    if (audio_buffer_.size() >= frame_len) {
+    size_t offset = 0;
+    if (!is_playing() && audio_buffer_.size() >= FRAME_SIZE_PCMU) {
         std::lock_guard<std::mutex> lock(queue_mutex);
 
         while (offset < audio_buffer_.size()) {
             size_t remaining = audio_buffer_.size() - offset;
-            size_t slice_len = std::min(frame_len, remaining);
-
-            if (remaining <= 2) break;
+            size_t slice_len = std::min(FRAME_SIZE_PCMU, remaining);
 
             audio_queue.emplace(audio_buffer_.begin() + offset, audio_buffer_.begin() + offset + slice_len);
             offset += slice_len;
@@ -504,6 +480,11 @@ void AudioSession::cleanup_media_bugs() {
 
 void AudioSession::cleanup_audio_buffer() {
     audio_buffer_.clear();
+    
+    std::queue<std::vector<uint8_t>> temp_queue;
+    std::lock_guard<std::mutex> lock(session->queue_mutex);
+
+    audio_queue.swap(temp_queue);
     audio_buffer_pos_ = 0;
 }
 
@@ -642,17 +623,10 @@ switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* 
 
                         std::vector<uint8_t> audio_chunk;
                         if (session->pop_audio_chunk(audio_chunk)) {
-                            frame->datalen=320;
                             size_t to_copy = std::min(audio_chunk.size()*sizeof(uint8_t), (size_t)frame->datalen);
-                            //full_scale(audio_chunk);
-                            //speex_preprocess_run(session->st, audio_chunk.data());
 
                             memcpy(frame->data, audio_chunk.data(), to_copy);
                             frame->datalen = to_copy;
-                            //frame->codec = &session->codec;
-                            //frame->rate = 16000;
-                            log_frame_bytes(frame);
-                            log_queue_bytes(audio_chunk);
 
                             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
                                              "Wrote %zu bytes of audio data for UUID: %s\n", to_copy, session->call_uuid_.c_str());
@@ -661,7 +635,6 @@ switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* 
                             if (session->audio_queue.empty()) {
                                 session->audio_playing_ = false;
                                 session->notify_audio_finished(false);
-                                // session->cleanup_audio_buffer();
                             }
                         }
                     }
