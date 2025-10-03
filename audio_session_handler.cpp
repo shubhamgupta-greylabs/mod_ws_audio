@@ -10,6 +10,7 @@
 #include <libwebsockets.h>
 #include <samplerate.h>
 #include <speex/speex_resampler.h>
+#include <speex/speex_preprocess.h>
 #include <stdexcept>
 
 /**
@@ -18,7 +19,7 @@
 AudioSession::AudioSession(const std::string& uuid, switch_core_session_t* session, std::string host, int port)
     : call_uuid_(uuid), session_(session), websocket_(nullptr), 
       read_bug_(nullptr), write_bug_(nullptr),
-      audio_playing_(false), audio_buffer_pos_(0), ws_host_(host), ws_port_(port), running(false) {
+      audio_playing_(false), audio_buffer_pos_(0), ws_host_(host), ws_port_(port), running(false), st(nullptr) {
     
     channel_ = switch_core_session_get_channel(session_);
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
@@ -53,7 +54,7 @@ AudioSession::AudioSession(const std::string& uuid, switch_core_session_t* sessi
     	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
                       "Failed to init L16 codec\n");
     }
-
+    size_t frame_size=320, sample_rate=16000;
     st = speex_preprocess_state_init(frame_size, sample_rate);
     int denoise = 1;
     speex_preprocess_ctl(st, SPEEX_PREPROCESS_SET_DENOISE, &denoise);
@@ -290,7 +291,7 @@ void AudioSession::handle_websocket_message(struct lws* wsi, const std::string& 
                                  "Decoded audio data is %s bytes having len %zu\n", decoded_audio, decoded_len);
 
                 if (decoded_audio && decoded_len > 0) {
-                    std::vector<int16_t> audio_vec(decoded_audio, decoded_audio + decoded_len);
+                    std::vector<uint8_t> audio_vec(decoded_audio, decoded_audio + decoded_len);
                     bool success = play_audio(audio_vec, decoded_len);
                     
                     switch_safe_free(decoded_audio);
@@ -407,9 +408,9 @@ std::vector<int16_t> AudioSession::resample_16k_to_8k(const std::vector<int16_t>
 }
 
 
-bool AudioSession::play_audio(const std::vector<int16_t>& audio_data, size_t len) {    
+bool AudioSession::play_audio(const std::vector<uint8_t>& audio_data, size_t len) {    
     //std::vector<int16_t> audio_samples_8k = resample_16k_to_8k(audio_data);
-    std::vector<int16_t> audio_samples_8k = audio_data;
+    std::vector<uint8_t> audio_samples_8k = audio_data;
     size_t frame_len = 320, offset = 0;
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
                      "Size of incoming sample is %zu\n", audio_samples_8k.size());
@@ -639,17 +640,17 @@ switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* 
                     if (frame && frame->data) {
                         std::lock_guard<std::mutex> lock(session->queue_mutex);
 
-                        std::vector<int16_t> audio_chunk;
+                        std::vector<uint8_t> audio_chunk;
                         if (session->pop_audio_chunk(audio_chunk)) {
-                            frame->datalen=640;
-                            size_t to_copy = std::min(audio_chunk.size()*sizeof(int16_t), (size_t)frame->datalen);
-                            full_scale(audio_chunk);
-                            speex_preprocess_run(st, audio_chunk);
+                            frame->datalen=320;
+                            size_t to_copy = std::min(audio_chunk.size()*sizeof(uint8_t), (size_t)frame->datalen);
+                            //full_scale(audio_chunk);
+                            //speex_preprocess_run(session->st, audio_chunk.data());
 
                             memcpy(frame->data, audio_chunk.data(), to_copy);
                             frame->datalen = to_copy;
-                            frame->codec = &session->codec;
-                            frame->rate = 16000;
+                            //frame->codec = &session->codec;
+                            //frame->rate = 16000;
                             log_frame_bytes(frame);
                             log_queue_bytes(audio_chunk);
 
