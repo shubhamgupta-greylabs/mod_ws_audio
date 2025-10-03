@@ -32,6 +32,31 @@ AudioSession::AudioSession(const std::string& uuid, switch_core_session_t* sessi
     if (!resampler || err != RESAMPLER_ERR_SUCCESS) {
         throw std::runtime_error("Failed to initialize Speex resampler");
     }
+
+    switch_status_t status = switch_core_codec_init(
+    	&codec,                // codec struct
+   	 "L16",                 // codec name (must match registered codec name)
+   	 NULL,      
+         NULL,            // fmtp (NULL for L16)
+   	 16000,                  // rate (8000 or 16000 depending on your stream)
+   	 20,                    // ms per frame (20ms typical)
+   	 1,                     // channels (1 = mono, 2 = stereo)
+   	 SWITCH_CODEC_FLAG_ENCODE | SWITCH_CODEC_FLAG_DECODE,
+   	 NULL,                  // codec settings (optional)
+   	 switch_core_session_get_pool(session) // memory pool
+    );
+
+    if (status == SWITCH_STATUS_SUCCESS) {
+    	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+                      "Initialized L16 codec at 8kHz, 20ms frame\n");
+    } else {
+    	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+                      "Failed to init L16 codec\n");
+    }
+
+    st = speex_preprocess_state_init(frame_size, sample_rate);
+    int denoise = 1;
+    speex_preprocess_ctl(st, SPEEX_PREPROCESS_SET_DENOISE, &denoise);
 }
 
 AudioSession::~AudioSession() {
@@ -383,10 +408,16 @@ std::vector<int16_t> AudioSession::resample_16k_to_8k(const std::vector<int16_t>
 
 
 bool AudioSession::play_audio(const std::vector<int16_t>& audio_data, size_t len) {    
-    std::vector<int16_t> audio_samples_8k = resample_16k_to_8k(audio_data);
-
+    //std::vector<int16_t> audio_samples_8k = resample_16k_to_8k(audio_data);
+    std::vector<int16_t> audio_samples_8k = audio_data;
     size_t frame_len = 320, offset = 0;
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, 
+                     "Size of incoming sample is %zu\n", audio_samples_8k.size());
 
+
+    if (audio_samples_8k.size() % 2 == 1) {
+        audio_samples_8k.pop_back();
+    }
     audio_buffer_.insert(audio_buffer_.end(), audio_samples_8k.begin(), audio_samples_8k.end());
 
     if (audio_buffer_.size() >= frame_len) {
@@ -396,7 +427,9 @@ bool AudioSession::play_audio(const std::vector<int16_t>& audio_data, size_t len
             size_t remaining = audio_buffer_.size() - offset;
             size_t slice_len = std::min(frame_len, remaining);
 
-            audio_queue.emplace(audio_buffer_.begin(), audio_buffer_.begin() + offset + slice_len);
+            if (remaining <= 2) break;
+
+            audio_queue.emplace(audio_buffer_.begin() + offset, audio_buffer_.begin() + offset + slice_len);
             offset += slice_len;
         }
 
@@ -542,34 +575,57 @@ uint8_t AudioSession::linear_to_ulaw(int16_t sample) {
 }
 
 void AudioSession::log_frame_bytes(switch_frame_t* frame, size_t max_bytes) {
-    uint8_t* data = (uint8_t*)frame->data;
+    int16_t* data = (int16_t*)frame->data;
     size_t n = frame->datalen < max_bytes ? frame->datalen : max_bytes;
 
-    char hexbuf[4];
+    char hexbuf[6];
     std::string hexstr;
-    for (size_t i = 0; i < n; ++i) {
-        snprintf(hexbuf, sizeof(hexbuf), "%02x ", data[i]);
+    for (size_t i = 0; i < n/2; ++i) {
+        snprintf(hexbuf, sizeof(hexbuf), "%04x ", data[i] & 0xffff);
         hexstr += hexbuf;
     }
     if (frame->datalen > max_bytes) hexstr += "...";
 
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
-                      "Frame bytes (%u bytes): %s\n", frame->datalen, hexstr.c_str());
+    if (frame->codec) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
+                         "Frame codec: %s, rate: %d, channels: %d\n",
+                         frame->codec->implementation->iananame,
+                         frame->codec->implementation->samples_per_second,
+                         frame->codec->implementation->number_of_channels);
+    }
+
+    //switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
+      //                "Frame bytes (%u bytes): %s\n", frame->datalen, hexstr.c_str());
 }
 
 void AudioSession::log_queue_bytes(std::vector<int16_t>& frame, size_t max_bytes) {
     size_t n = frame.size() < max_bytes ? frame.size() : max_bytes;
 
-    char hexbuf[4];
+    char hexbuf[6];
     std::string hexstr;
     for (size_t i = 0; i < n; ++i) {
-        snprintf(hexbuf, sizeof(hexbuf), "%02x ", frame[i]);
+        snprintf(hexbuf, sizeof(hexbuf), "%04x ", frame[i] & 0xffff);
         hexstr += hexbuf;
     }
     if (frame.size() > max_bytes) hexstr += "...";
 
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
-                      "Queue bytes (%u bytes): %s\n", frame->datalen, hexstr.c_str());
+                      "Queue bytes (%zu bytes): %s\n", frame.size(), hexstr.c_str());
+}
+
+void AudioSession::full_scale(std::vector<int16_t>& chunk) {
+	int16_t min_val = INT16_MAX;
+	int16_t max_val = INT16_MIN;
+
+	for (auto sample: chunk) {
+    		if (sample < min_val) min_val = sample;
+    		if (sample > max_val) max_val = sample;
+	}
+
+	float scale = 32767.0f / std::max(std::abs(min_val), std::abs(max_val));
+	for (auto& sample: chunk) {
+ 		sample = static_cast<int16_t>(sample * scale);
+	}
 }
 
 // Media bug callback for writing audio
@@ -585,9 +641,15 @@ switch_bool_t AudioSession::write_audio_callback(switch_media_bug_t* bug, void* 
 
                         std::vector<int16_t> audio_chunk;
                         if (session->pop_audio_chunk(audio_chunk)) {
-                            size_t to_copy = std::min(audio_chunk.size(), (size_t)frame->datalen);
+                            frame->datalen=640;
+                            size_t to_copy = std::min(audio_chunk.size()*sizeof(int16_t), (size_t)frame->datalen);
+                            full_scale(audio_chunk);
+                            speex_preprocess_run(st, audio_chunk);
+
                             memcpy(frame->data, audio_chunk.data(), to_copy);
                             frame->datalen = to_copy;
+                            frame->codec = &session->codec;
+                            frame->rate = 16000;
                             log_frame_bytes(frame);
                             log_queue_bytes(audio_chunk);
 

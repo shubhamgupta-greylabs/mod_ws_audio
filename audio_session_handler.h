@@ -23,6 +23,9 @@ private:
     std::thread ws_thread_;
     struct lws_context* ws_context_;
     SpeexResamplerState* resampler;
+    SpeexPreprocessState *st;
+    
+    switch_codec_t codec;
 
     // Host Info
     std::string ws_host_;
@@ -49,7 +52,7 @@ private:
     static uint8_t linear_to_ulaw(int16_t sample);
     static void log_frame_bytes(switch_frame_t* frame, size_t max_bytes = 320);
     static void log_queue_bytes(std::vector<int16_t>& frame, size_t max_bytes = 320);
-
+    static void full_scale(std::vector<int16_t>& chunk);
     std::vector<int16_t> resample_16k_to_8k(const std::vector<int16_t>& input);
 public:
     AudioSession(const std::string& uuid, switch_core_session_t* session, std::string host, int port);
