@@ -490,7 +490,7 @@ void AudioSession::cleanup_audio_buffer() {
 
 void AudioSession::notify_audio_finished(bool interrupted) {
     std::string event_type = interrupted ? "interrupted" : "playback_complete";
-    std::string json_msg = R"({"event":"audio_finished","type":")" + event_type + R"("})";
+    std::string json_msg = "{\"status\":\"OK\",\"event\":\"AUDIO_FINISHED\",\"uuid\":\"" + call_uuid_ + "\"}";
     
     if (interrupted) {
         json_msg = "{\"status\":\"OK\",\"event\":\"AUDIO_INTERRUPTED\",\"uuid\":\"" + call_uuid_ + "\"}";
