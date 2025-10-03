@@ -177,7 +177,7 @@ int AudioSession::websocket_callback(struct lws* wsi, enum lws_callback_reasons 
                               "WebSocket connected for call %s\n", session->call_uuid_.c_str());
 
             // Prepare verification JSON
-            std::string init_msg = "{\"status\":\"ok\",\"message\":\"connected\",\"uuid\":\"" + session->call_uuid_ + "\"}";
+            std::string init_msg = "{\"status\":\"OK\",\"event\":\"CONNECTED\",\"uuid\":\"" + session->call_uuid_ + "\"}";
 
             session->send_json_message(init_msg);
 
@@ -248,8 +248,8 @@ void AudioSession::handle_websocket_message(struct lws* wsi, const std::string& 
             bool success = start_streaming();
         
             std::string response = success ? 
-                "{\"status\":\"ok\",\"message\":\"Audio streaming started\",\"uuid\":\"" + uuid + "\"}":
-                R"({"status":"error","message":"Failed to start streaming"})";
+                "{\"status\":\"OK\",\"event\":\"STREAMING_STARTED\",\"uuid\":\"" + uuid + "\"}":
+                "{\"status\":\"ERROR\",\"event\":\"STREAMING_STARTED\",\"uuid\":\"" + uuid + "\"}";
         
             send_json_message(response);
         
@@ -292,7 +292,7 @@ void AudioSession::handle_websocket_message(struct lws* wsi, const std::string& 
             stop_streaming();
             // TODO: Might need to remove the websocket connection too
 
-            std::string response = R"({"status":"ok","message":"Audio streaming stopped"})";
+            std::string response = "{\"status\":\"OK\",\"event\":\"STREAMING_STOPPED\",\"uuid\":\"" + uuid + "\"}";
             send_json_message(response);
         }
     }
@@ -493,7 +493,7 @@ void AudioSession::notify_audio_finished(bool interrupted) {
     std::string json_msg = R"({"event":"audio_finished","type":")" + event_type + R"("})";
     
     if (interrupted) {
-        json_msg = R"({"event":"audio_stopped","type":"interrupted"})";
+        json_msg = "{\"status\":\"OK\",\"event\":\"AUDIO_INTERRUPTED\",\"uuid\":\"" + call_uuid_ + "\"}";
     }
     
     send_json_message(json_msg);
