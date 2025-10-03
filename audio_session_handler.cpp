@@ -213,7 +213,7 @@ int AudioSession::websocket_callback(struct lws* wsi, enum lws_callback_reasons 
         break;
 
     case LWS_CALLBACK_CLIENT_WRITEABLE: {
-        std::vector<int16_t> audio_chunk;
+        std::vector<uint8_t> audio_chunk;
         if (session->pop_audio_chunk(audio_chunk)) {
             std::vector<unsigned char> buf(LWS_PRE + audio_chunk.size());
             memcpy(buf.data() + LWS_PRE, audio_chunk.data(), audio_chunk.size());
@@ -518,7 +518,7 @@ void AudioSession::notify_audio_finished(bool interrupted) {
     send_json_message(json_msg);
 }
 
-bool AudioSession::pop_audio_chunk(std::vector<int16_t>& chunk) {
+bool AudioSession::pop_audio_chunk(std::vector<uint8_t>& chunk) {
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, 
                      "Popping audio chunk for UUID: %s, queue size: %zu\n", call_uuid_.c_str(), audio_queue.size());
 
@@ -599,7 +599,7 @@ void AudioSession::log_frame_bytes(switch_frame_t* frame, size_t max_bytes) {
       //                "Frame bytes (%u bytes): %s\n", frame->datalen, hexstr.c_str());
 }
 
-void AudioSession::log_queue_bytes(std::vector<int16_t>& frame, size_t max_bytes) {
+void AudioSession::log_queue_bytes(std::vector<uint8_t>& frame, size_t max_bytes) {
     size_t n = frame.size() < max_bytes ? frame.size() : max_bytes;
 
     char hexbuf[6];
